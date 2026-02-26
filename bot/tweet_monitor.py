@@ -32,7 +32,9 @@ def _is_rate_limit_error(exc: Exception) -> bool:
 def load_state() -> dict:
     if os.path.exists(STATE_FILE):
         with open(STATE_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            content = f.read().strip()
+            if content:
+                return json.loads(content)
     return {}
 
 
