@@ -1,0 +1,30 @@
+# Secrets & credentials
+accounts.txt
+config.yaml
+
+# Runtime state
+accounts.db
+state.json
+
+# Virtual environment
+.venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# IDE
+.idea/
+*.iml
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Docker
+*.log
