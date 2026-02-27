@@ -66,6 +66,14 @@ Create `accounts.txt` with one Twitter account per line in twscrape format:
 username:password:email:email_password:auth_token=...; ct0=...
 ```
 
+Load the file to create database user for the api
+
+```bash
+twscrape add_accounts ./accounts.txt username:password:email:email_password:cookies
+``` 
+
+If success run the command asked
+
 > **Security**: `accounts.txt` contains sensitive credentials. Never commit it to git. Add it to `.gitignore`.
 
 ### 3. Create empty state files (first run)
