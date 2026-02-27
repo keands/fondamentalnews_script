@@ -15,7 +15,6 @@ A Telegram bot that monitors financial news and posts market-moving information 
 | Tool | Version |
 |------|---------|
 | Python | 3.12+ |
-| Docker + Compose | any recent |
 | Telegram Bot Token | [BotFather](https://t.me/BotFather) |
 | DeepL API key | [deepl.com](https://www.deepl.com/pro-api) |
 | Anthropic API key | [console.anthropic.com](https://console.anthropic.com) |
@@ -80,14 +79,44 @@ touch accounts.db
 
 ## Running
 
-### Option A — Docker (recommended for production)
+### Option A — systemd (production)
 
 ```bash
-docker compose up -d
-docker compose logs -f
+# 1. Create the service file
+sudo nano /etc/systemd/system/fondamentalnewsbot.service
 ```
 
-The `docker-compose.yml` mounts `config.yaml`, `accounts.txt`, `accounts.db`, and `state.json` from the host so state survives container restarts.
+Paste this content (adjust `User` and paths):
+
+```ini
+[Unit]
+Description=fondamentalnewsbot
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/path/to/fondamentalnewsbot
+ExecStart=/path/to/fondamentalnewsbot/.venv/bin/python -u main.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+# 2. Enable and start
+sudo systemctl daemon-reload
+sudo systemctl enable fondamentalnewsbot
+sudo systemctl start fondamentalnewsbot
+
+# 3. Check status / follow logs
+sudo systemctl status fondamentalnewsbot
+sudo journalctl -u fondamentalnewsbot -f
+```
 
 ### Option B — Local (development)
 
@@ -123,8 +152,6 @@ fondamentalnewsbot/
 ├── accounts.db              # twscrape session database (auto-managed)
 ├── state.json               # Runtime state (last tweet IDs, posted events)
 ├── requirements.txt
-├── Dockerfile
-├── docker-compose.yml
 └── bot/
     ├── economic_calendar.py # ForexFactory fetching & formatting
     ├── tweet_monitor.py     # Twitter polling & formatting
@@ -155,8 +182,8 @@ Optional. If omitted, all tweets pass through without AI filtering and no summar
 ## Stopping
 
 ```bash
-# Docker
-docker compose down
+# systemd
+sudo systemctl stop fondamentalnewsbot
 
 # Local
 Ctrl+C

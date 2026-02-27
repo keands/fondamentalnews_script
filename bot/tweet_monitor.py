@@ -11,6 +11,14 @@ import twscrape
 
 logger = logging.getLogger(__name__)
 
+_ACCOUNTS_DB = os.environ.get("TWSCRAPE_DB", "accounts.db")
+
+
+def _make_api() -> twscrape.API:
+    db_dir = os.path.dirname(os.path.abspath(_ACCOUNTS_DB))
+    os.makedirs(db_dir, exist_ok=True)
+    return twscrape.API(db_file=_ACCOUNTS_DB)
+
 _MAX_TWEET_LEN = 280
 
 STATE_FILE = "state.json"
@@ -67,7 +75,7 @@ async def check_new_tweets(
         logger.debug("No Twitter accounts configured")
         return
 
-    api = twscrape.API()
+    api = _make_api()
 
     last_ids: dict = state.setdefault("last_tweet_ids", {})
 
@@ -134,7 +142,7 @@ async def fetch_todays_tweets(config: dict, summarize_fn=None, validate_fn=None)
     twitter_cfg = config.get("twitter", {})
     accounts = twitter_cfg.get("accounts", [])
     today = datetime.now(timezone.utc).date()
-    api = twscrape.API()
+    api = _make_api()
 
     result: dict[str, list[dict]] = {}
     for account in accounts:
