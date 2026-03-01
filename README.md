@@ -6,7 +6,7 @@ A Telegram bot that monitors financial news and posts market-moving information 
 
 - **Morning Digest** — posts today's economic calendar events (ForexFactory) at 08:00 UTC, Mon–Fri
 - **Release Alerts** — detects when economic data is released (actual value becomes available) and sends an immediate alert
-- **Twitter Monitor** — polls configured Twitter accounts for new tweets, translates them to French via DeepL, and optionally summarizes them
+- **Twitter Monitor** — polls configured Twitter accounts for new tweets, translates them to French via Claude, and optionally summarizes them
 - **AI Relevance Filter** — uses Claude (Haiku) to skip tweets that carry no market-moving signal
 - **Error Alerts** — sends scheduler errors to a private Telegram chat
 
@@ -16,7 +16,6 @@ A Telegram bot that monitors financial news and posts market-moving information 
 |------|---------|
 | Python | 3.12+ |
 | Telegram Bot Token | [BotFather](https://t.me/BotFather) |
-| DeepL API key | [deepl.com](https://www.deepl.com/pro-api) |
 | Anthropic API key | [console.anthropic.com](https://console.anthropic.com) |
 | Twitter account(s) | for scraping via twscrape |
 
@@ -37,9 +36,6 @@ telegram:
   token: "YOUR_BOT_TOKEN"
   channel_id: "@your_channel"   # or numeric ID
   alert_chat_id: "YOUR_CHAT_ID" # your personal chat for error DMs
-
-deepl:
-  api_key: "YOUR_DEEPL_KEY"
 
 twitter:
   max_messages_per_cycle: 3
@@ -164,7 +160,7 @@ fondamentalnewsbot/
     ├── economic_calendar.py # ForexFactory fetching & formatting
     ├── tweet_monitor.py     # Twitter polling & formatting
     ├── telegram_sender.py   # Telegram message delivery
-    ├── translator.py        # DeepL translation
+    ├── translator.py        # Claude translation
     ├── relevance.py         # Claude AI relevance filter
     └── summarizer.py        # Claude AI tweet summarizer
 ```

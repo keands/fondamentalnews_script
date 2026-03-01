@@ -45,13 +45,13 @@ async def main() -> None:
         alert_chat_id=tg_cfg.get("alert_chat_id", ""),
     )
 
-    deepl_cfg = config.get("deepl", {})
-    translator = Translator(api_key=deepl_cfg["api_key"])
+    claude_cfg = config.get("claude", {})
+    claude_api_key = claude_cfg.get("api_key", "")
+    translator = Translator(api_key=claude_api_key) if claude_api_key else None
+    translate_fn = translator.translate if translator else None
 
     state = load_state()
 
-    claude_cfg = config.get("claude", {})
-    claude_api_key = claude_cfg.get("api_key", "")
     relevance = Relevance(api_key=claude_api_key) if claude_api_key else None
     validate_fn = relevance.is_relevant if relevance else None
     summarizer = Summarizer(api_key=claude_api_key) if claude_api_key else None
@@ -99,7 +99,7 @@ async def main() -> None:
         minutes=poll_interval,
         kwargs={
             "config": config,
-            "translate_fn": translator.translate,
+            "translate_fn": translate_fn,
             "send_fn": sender.send,
             "state": state,
             "validate_fn": validate_fn,
