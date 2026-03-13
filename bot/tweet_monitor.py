@@ -50,6 +50,7 @@ async def check_new_tweets(
     state: dict,
     validate_fn=None,
     summarize_fn=None,
+    classify_fn=None,
 ) -> None:
     """Poll each configured Twitter account and post new tweets."""
     global _rate_limited_until
@@ -115,7 +116,8 @@ async def check_new_tweets(
                 original_text = tweet.rawContent
                 translated = await translate_fn(original_text)
                 summary = await summarize_fn(original_text) if summarize_fn else ""
-                message = _format_tweet(tweet, original_text, translated, label, handle, summary)
+                hashtags = await classify_fn(translated or original_text) if classify_fn else ""
+                message = _format_tweet(tweet, original_text, translated, label, handle, summary, hashtags)
                 await send_fn(message)
                 sent_count += 1
             except Exception:
@@ -205,7 +207,7 @@ async def _get_user_id(api: twscrape.API, handle: str) -> int:
     return user.id
 
 
-def _format_tweet(tweet, original: str, translated: str, label: str, handle: str, summary: str = "") -> str:
+def _format_tweet(tweet, original: str, translated: str, label: str, handle: str, summary: str = "", hashtags: str = "") -> str:
     url = f"https://twitter.com/{handle}/status/{tweet.id}"
     parts = [f"🐦 *{label}* (@{handle})", ""]
     if summary and len(original) > _MAX_TWEET_LEN:
@@ -215,4 +217,6 @@ def _format_tweet(tweet, original: str, translated: str, label: str, handle: str
         if translated and translated.strip() != original.strip():
             parts += ["", "🇫🇷 *Traduction:*", translated]
     parts += ["", f"[Voir le tweet]({url})"]
+    if hashtags:
+        parts += ["", hashtags]
     return "\n".join(parts)
