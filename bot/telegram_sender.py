@@ -18,7 +18,7 @@ class TelegramSender:
         """Send a Markdown-formatted message to the configured channel."""
         await self._bot.send_message(
             chat_id=self._channel_id,
-            text=text,
+            text=text + "\n\n[@fondamentalnews](https://t.me/fondamentalnews)",
             parse_mode=ParseMode.MARKDOWN,
             disable_web_page_preview=True,
         )
@@ -39,7 +39,7 @@ class TelegramSender:
         """Send a MarkdownV2-formatted message."""
         await self._bot.send_message(
             chat_id=self._channel_id,
-            text=text,
+            text=text + "\n\n[@fondamentalnews](https://t\\.me/fondamentalnews)",
             parse_mode=ParseMode.MARKDOWN_V2,
             disable_web_page_preview=True,
         )
