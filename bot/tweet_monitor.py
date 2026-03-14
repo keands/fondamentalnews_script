@@ -209,14 +209,14 @@ async def _get_user_id(api: twscrape.API, handle: str) -> int:
 
 def _format_tweet(tweet, original: str, translated: str, label: str, handle: str, summary: str = "", hashtags: str = "") -> str:
     url = f"https://twitter.com/{handle}/status/{tweet.id}"
-    parts = [f"🐦 *{label}* (@{handle})", ""]
+    parts = []
     if summary and len(original) > _MAX_TWEET_LEN:
         parts.append(f"_{summary}_")
     else:
         parts.append(original)
         if translated and translated.strip() != original.strip():
             parts += ["", "🇫🇷 *Traduction:*", translated]
-    parts += ["", f"[Voir le tweet]({url})"]
+    parts += ["", f"🐦 *{label}* (@{handle})", f"[Voir le tweet]({url})"]
     if hashtags:
         parts += ["", hashtags]
     return "\n".join(parts)

@@ -56,6 +56,7 @@ async def main() -> None:
     validate_fn = relevance.is_relevant if relevance else None
     summarizer = Summarizer(api_key=claude_api_key) if claude_api_key else None
     summarize_fn = summarizer.summarize if summarizer else None
+    classify_fn = summarizer.classify if summarizer else None
 
     scheduler = AsyncIOScheduler()
 
@@ -104,6 +105,7 @@ async def main() -> None:
             "state": state,
             "validate_fn": validate_fn,
             "summarize_fn": summarize_fn,
+            "classify_fn": classify_fn,
         },
         id="tweet_monitor",
     )
