@@ -6,7 +6,7 @@ A Telegram bot that monitors financial news and posts market-moving information 
 
 - **Morning Digest** — posts today's economic calendar events (ForexFactory) at 08:00 UTC, Mon–Fri
 - **Release Alerts** — detects when economic data is released (actual value becomes available) and sends an immediate alert
-- **Twitter Monitor** — polls configured Twitter accounts for new tweets, translates them to French via Claude, and optionally summarizes them
+- **Twitter Monitor** — streams configured X accounts in real-time via the official X API filtered stream, translates new tweets to French via Claude, and optionally summarizes them
 - **AI Relevance Filter** — uses Claude (Haiku) to skip tweets that carry no market-moving signal
 - **Error Alerts** — sends scheduler errors to a private Telegram chat
 
@@ -17,7 +17,7 @@ A Telegram bot that monitors financial news and posts market-moving information 
 | Python | 3.12+ |
 | Telegram Bot Token | [BotFather](https://t.me/BotFather) |
 | Anthropic API key | [console.anthropic.com](https://console.anthropic.com) |
-| Twitter account(s) | for scraping via twscrape |
+| X API Bearer Token | [developer.x.com](https://developer.x.com) — needs access to the filtered stream endpoint (pay-per-use plan or higher) |
 
 ## Setup
 
@@ -38,8 +38,9 @@ telegram:
   alert_chat_id: "YOUR_CHAT_ID" # your personal chat for error DMs
 
 twitter:
-  max_messages_per_cycle: 3
-  poll_interval_minutes: 10
+  bearer_token: "YOUR_X_API_BEARER_TOKEN"
+  max_messages_per_window: 3
+  window_minutes: 5
   accounts:
     - handle: "federalreserve"
       label: "Federal Reserve"
@@ -54,29 +55,20 @@ claude:
   api_key: "YOUR_ANTHROPIC_KEY"  # optional — disables AI filter if omitted
 ```
 
-### 2. Add Twitter credentials
+### 2. Add an X API Bearer Token
 
-Create `accounts.txt` with one Twitter account per line in twscrape format:
+Create a project + App at [developer.x.com](https://developer.x.com) with access to the filtered
+stream endpoint (`GET /2/tweets/search/stream`), generate an **App-only Bearer Token**, and set it
+as `twitter.bearer_token` in `config.yaml`.
 
-```
-username:password:email:email_password:auth_token=...; ct0=...
-```
+No account credentials or login cookies are needed — the bot uses the official read-only API.
 
-Load the file to create database user for the api
+> **Security**: `config.yaml` contains sensitive credentials. Never commit it to git. Add it to `.gitignore`.
 
-```bash
-twscrape add_accounts ./accounts.txt username:password:email:email_password:cookies
-``` 
-
-If success run the command asked
-
-> **Security**: `accounts.txt` contains sensitive credentials. Never commit it to git. Add it to `.gitignore`.
-
-### 3. Create empty state files (first run)
+### 3. Create empty state file (first run)
 
 ```bash
 echo '{}' > state.json
-touch accounts.db
 ```
 
 ---
@@ -140,7 +132,7 @@ python main.py
 |-----|----------|-------------|
 | `morning_digest` | 08:00 UTC, Mon–Fri | Posts today's economic events |
 | `check_releases` | Every 60 min (configurable) | Posts alerts when actual data is available |
-| `tweet_monitor` | Every 10 min (configurable) | Checks Twitter accounts for new tweets |
+| `tweet_monitor` | Continuous (real-time stream) | Streams new tweets from configured X accounts |
 
 On startup, if it is past 08:00 UTC on a weekday and the digest has not been sent today, it fires immediately.
 
@@ -150,15 +142,13 @@ On startup, if it is past 08:00 UTC on a weekday and the digest has not been sen
 
 ```
 fondamentalnewsbot/
-├── main.py                  # Entry point, scheduler setup
+├── main.py                  # Entry point, scheduler + stream task setup
 ├── config.yaml              # All configuration (API keys, accounts, filters)
-├── accounts.txt             # Twitter credentials for twscrape (keep secret)
-├── accounts.db              # twscrape session database (auto-managed)
 ├── state.json               # Runtime state (last tweet IDs, posted events)
 ├── requirements.txt
 └── bot/
     ├── economic_calendar.py # ForexFactory fetching & formatting
-    ├── tweet_monitor.py     # Twitter polling & formatting
+    ├── tweet_monitor.py     # X filtered-stream consumer & formatting
     ├── telegram_sender.py   # Telegram message delivery
     ├── translator.py        # Claude translation
     ├── relevance.py         # Claude AI relevance filter
@@ -169,10 +159,19 @@ fondamentalnewsbot/
 
 ## Configuration Reference
 
+### `twitter.bearer_token`
+X API App-only Bearer Token, used to authenticate the filtered stream connection.
+
 ### `twitter.accounts`
 Each entry needs:
-- `handle` — Twitter username without `@`
+- `handle` — X username without `@` (used to build a `from:` stream rule)
 - `label` — Display name shown in Telegram messages
+
+Adding/removing a handle here takes effect on the next restart (stream rules are re-synced at startup).
+
+### `twitter.max_messages_per_window` / `twitter.window_minutes`
+Caps how many tweets get posted to Telegram within a rolling time window, to guard against a burst
+of activity flooding the channel.
 
 ### `economic_calendar.min_impact`
 - `medium` — includes Medium and High impact events

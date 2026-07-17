@@ -1,9 +1,10 @@
 """fondamentalnewsbot — Entry point.
 
-Starts the APScheduler and runs scheduled jobs:
+Starts the APScheduler for scheduled jobs and a background X (Twitter)
+filtered-stream consumer for real-time tweet delivery:
 - 08:00 daily: economic calendar morning digest
 - Every 60 min: check for new economic releases
-- Every 30 min: check configured Twitter accounts for new tweets
+- Continuous: X filtered stream pushes new tweets from configured accounts
 """
 
 import asyncio
@@ -20,7 +21,7 @@ from bot.relevance import Relevance
 from bot.summarizer import Summarizer
 from bot.telegram_sender import TelegramSender
 from bot.translator import Translator
-from bot.tweet_monitor import check_new_tweets, load_state, save_state
+from bot.tweet_monitor import consume_stream, load_state, save_state
 
 logging.basicConfig(
     level=logging.INFO,
@@ -69,7 +70,6 @@ async def main() -> None:
     scheduler.add_listener(_on_job_error, EVENT_JOB_ERROR)
 
     cal_cfg = config.get("economic_calendar", {})
-    twitter_cfg = config.get("twitter", {})
 
     # Morning digest at 08:00 UTC, Monday–Friday only
     scheduler.add_job(
@@ -92,23 +92,33 @@ async def main() -> None:
         id="check_releases",
     )
 
-    # Tweet monitor
-    poll_interval = twitter_cfg.get("poll_interval_minutes", 30)
-    scheduler.add_job(
-        check_new_tweets,
-        "interval",
-        minutes=poll_interval,
-        kwargs={
-            "config": config,
-            "translate_fn": translate_fn,
-            "send_fn": sender.send,
-            "state": state,
-            "validate_fn": validate_fn,
-            "summarize_fn": summarize_fn,
-            "classify_fn": classify_fn,
-        },
-        id="tweet_monitor",
+    # Tweet monitor — real-time X filtered stream, run as a background task
+    # rather than a scheduler job (it's a long-lived connection, not a periodic call).
+    stream_task = asyncio.create_task(
+        consume_stream(
+            config=config,
+            translate_fn=translate_fn,
+            send_fn=sender.send,
+            state=state,
+            validate_fn=validate_fn,
+            summarize_fn=summarize_fn,
+            classify_fn=classify_fn,
+        ),
+        name="x_stream_consumer",
     )
+
+    def _on_stream_task_done(task: asyncio.Task) -> None:
+        if task.cancelled():
+            return
+        exc = task.exception()
+        msg = (
+            f"⚠️ X stream task stopped: {type(exc).__name__}: {exc}"
+            if exc is not None
+            else "⚠️ X stream task exited unexpectedly (no tweets will be received)."
+        )
+        asyncio.ensure_future(sender.send_alert(msg))
+
+    stream_task.add_done_callback(_on_stream_task_done)
 
     scheduler.start()
     logger.info("Scheduler started. Jobs: %s", [j.id for j in scheduler.get_jobs()])
@@ -133,6 +143,12 @@ async def main() -> None:
     except (KeyboardInterrupt, SystemExit):
         logger.info("Shutting down...")
     finally:
+        stream_task.remove_done_callback(_on_stream_task_done)
+        stream_task.cancel()
+        try:
+            await stream_task
+        except (asyncio.CancelledError, Exception):
+            pass
         await sender.send_alert("🛑 Bot stopped.")
         scheduler.shutdown()
         save_state(state)
