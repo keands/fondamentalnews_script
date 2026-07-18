@@ -147,7 +147,9 @@ async def consume_stream(
         logger.warning("No twitter.bearer_token configured — stream not started.")
         return
 
-    handle_label = {a["handle"]: a.get("label", a["handle"]) for a in accounts if a.get("handle")}
+    handle_label = {
+        a["handle"].lower(): a.get("label", a["handle"]) for a in accounts if a.get("handle")
+    }
     client = xdk.Client(bearer_token=bearer_token)
     _sync_rules(client, list(handle_label))
 
@@ -175,8 +177,13 @@ async def consume_stream(
                 raise RuntimeError("X stream worker exited — tweets will no longer be received.")
 
             for tweet, handle in _extract_tweets(resp):
-                if not handle or handle not in handle_label:
+                if not handle or handle.lower() not in handle_label:
+                    logger.info(
+                        "Received tweet %s from unconfigured/unmatched handle @%s — dropping.",
+                        tweet.id, handle,
+                    )
                     continue
+                handle = handle.lower()
                 if tweet.id in seen_ids:
                     continue
                 seen_ids.append(tweet.id)
