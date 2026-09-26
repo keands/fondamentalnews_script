@@ -7,7 +7,6 @@ from telegram.constants import ParseMode
 
 logger = logging.getLogger(__name__)
 
-
 class TelegramSender:
     def __init__(self, token: str, channel_id: str, alert_chat_id: str = "") -> None:
         self._bot = Bot(token=token)

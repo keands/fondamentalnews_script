@@ -13,9 +13,12 @@ from typing import Any
 
 import xdk
 
+from bot.promo_filter import looks_promotional
+
 logger = logging.getLogger(__name__)
 
-_MAX_TWEET_LEN = 280
+# Telegram caps messages at 4096 chars; keep room for the channel footer added by the sender.
+_TELEGRAM_MAX_LEN = 4000
 
 STATE_FILE = "state.json"
 
@@ -75,7 +78,9 @@ def _stream_worker(
     """Runs in a background thread — client.stream.posts() is a blocking generator."""
     try:
         for resp in client.stream.posts(
-            tweet_fields=["created_at"],
+            # note_tweet carries the full text of long posts (>280 chars), which "text" truncates;
+            # referenced_tweets identifies retweets, which are skipped.
+            tweet_fields=["created_at", "note_tweet", "referenced_tweets"],
             expansions=["author_id"],
             user_fields=["username"],
             stream_config=_make_stream_config(),
@@ -89,8 +94,20 @@ def _stream_worker(
         loop.call_soon_threadsafe(out_queue.put_nowait, None)  # sentinel: stream ended
 
 
+def _full_text(item: dict) -> str:
+    """Return the untruncated text of a tweet payload (long posts store it in note_tweet)."""
+    note = item.get("note_tweet") or {}
+    return note.get("text") or item.get("text", "")
+
+
+def _is_retweet(item: dict) -> bool:
+    if any(ref.get("type") == "retweeted" for ref in item.get("referenced_tweets") or []):
+        return True
+    return item.get("text", "").startswith("RT @")
+
+
 def _extract_tweets(resp: Any) -> list[tuple[Tweet, str]]:
-    """Return [(Tweet, handle), ...] for one streamed response."""
+    """Return [(Tweet, handle), ...] for one streamed response. Retweets are skipped."""
     data = resp.data
     if not data:
         return []
@@ -105,9 +122,12 @@ def _extract_tweets(resp: Any) -> list[tuple[Tweet, str]]:
         created_at = item.get("created_at")
         if not tweet_id or not created_at:
             continue
+        if _is_retweet(item):
+            logger.info("Skipped retweet %s", tweet_id)
+            continue
         date = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
         handle = users_by_id.get(item.get("author_id"), "")
-        results.append((Tweet(id=str(tweet_id), rawContent=item.get("text", ""), date=date), handle))
+        results.append((Tweet(id=str(tweet_id), rawContent=_full_text(item), date=date), handle))
     return results
 
 
@@ -130,6 +150,7 @@ async def consume_stream(
     validate_fn=None,
     summarize_fn=None,
     classify_fn=None,
+    promo_fn=None,
 ) -> None:
     """Consume the X filtered stream and post new tweets to Telegram.
 
@@ -190,35 +211,49 @@ async def consume_stream(
                 last_ids[handle] = tweet.id
                 label = handle_label[handle]
 
+                # Lifecycle: tweet from X -> filter -> summarize -> translate the summary
+                # -> one Telegram message.
                 try:
+                    if looks_promotional(tweet.rawContent) or (
+                        promo_fn and await promo_fn(tweet.rawContent)
+                    ):
+                        logger.info("Skipped promotional tweet %s from @%s", tweet.id, handle)
+                        continue
                     if validate_fn and not await validate_fn(tweet.rawContent):
                         logger.info("Skipped irrelevant tweet %s from @%s", tweet.id, handle)
                         continue
                     if not _allow_send(recent_sends, max_per_window, window_minutes * 60):
                         logger.info("Rate limit reached, dropping tweet %s from @%s", tweet.id, handle)
                         continue
-                    original_text = tweet.rawContent
-                    translated = await translate_fn(original_text)
-                    summary = await summarize_fn(original_text) if summarize_fn else ""
-                    hashtags = await classify_fn(translated or original_text) if classify_fn else ""
-                    message = _format_tweet(tweet, original_text, translated, label, handle, summary, hashtags)
-                    await send_fn(message)
+                    summary = await summarize_fn(tweet.rawContent) if summarize_fn else ""
+                    text = summary or tweet.rawContent
+                    translated = await translate_fn(text) if translate_fn else ""
+                    text = translated or text
+                    hashtags = await classify_fn(text) if classify_fn else ""
+                    await send_fn(_format_tweet(tweet, text, label, handle, hashtags))
                 except Exception:
                     logger.exception("Failed to process tweet %s from @%s", tweet.id, handle)
     finally:
         stop_event.set()
 
 
-def _format_tweet(tweet, original: str, translated: str, label: str, handle: str, summary: str = "", hashtags: str = "") -> str:
+def _fit(text: str, max_len: int) -> str:
+    """Shorten text to max_len at a sentence (or word) boundary. Only reached when no summary
+    could be produced for a very long post — a summary always fits in one message."""
+    if len(text) <= max_len:
+        return text
+    head = text[: max_len - 1]
+    cut = max(head.rfind(". "), head.rfind("\n"))
+    if cut < max_len // 2:
+        cut = head.rfind(" ")
+    return head[: cut + 1 if cut > 0 else len(head)].rstrip() + "…"
+
+
+def _format_tweet(tweet, text: str, label: str, handle: str, hashtags: str = "") -> str:
+    """Build the single Telegram message for a tweet from its (translated) summary."""
     url = f"https://twitter.com/{handle}/status/{tweet.id}"
-    parts = []
-    if summary and len(original) > _MAX_TWEET_LEN:
-        parts.append(f"_{summary}_")
-    else:
-        parts.append(original)
-        if translated and translated.strip() != original.strip():
-            parts += ["", "🇫🇷 *Traduction:*", translated]
-    parts += ["", f"🐦 *{label}* (@{handle})", f"[Voir le tweet]({url})"]
+    footer = ["", f"🐦 *{label}* (@{handle})", f"[Voir le tweet]({url})"]
     if hashtags:
-        parts += ["", hashtags]
-    return "\n".join(parts)
+        footer += ["", hashtags]
+    footer_text = "\n".join(footer)
+    return _fit(text, _TELEGRAM_MAX_LEN - len(footer_text) - 1) + "\n" + footer_text
