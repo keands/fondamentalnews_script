@@ -1,66 +1,35 @@
-"""Unit tests for _format_tweet conditional logic."""
+"""Unit tests for _format_tweet (one Telegram message per tweet)."""
 
 from types import SimpleNamespace
-from bot.tweet_monitor import _format_tweet, _MAX_TWEET_LEN, _TELEGRAM_MAX_LEN
+
+from bot.tweet_monitor import _TELEGRAM_MAX_LEN, _format_tweet
 
 
 def make_tweet(tweet_id: int = 123456789):
     return SimpleNamespace(id=tweet_id)
 
 
-SHORT = "Breaking: markets up."  # well under 280 chars
-LONG = "A" * (_MAX_TWEET_LEN + 1)  # 281 chars — triggers summary path
-SUMMARY = "Les marchés montent fortement ce matin."
-TRANSLATED = "Les marchés sont en hausse."
+SUMMARY_FR = "Powell : la Fed reste prudente.\n\n📊 Impact : pression sur le dollar."
 LABEL = "Walter Blomberg"
 HANDLE = "deitaone"
 
 
-def test_short_tweet_shows_original_and_translation():
-    msg = _format_tweet(make_tweet(), SHORT, TRANSLATED, LABEL, HANDLE, summary=SUMMARY)
-    assert SHORT in msg
-    assert "🇫🇷 *Traduction:*" in msg
-    assert TRANSLATED in msg
-    assert f"_{SUMMARY}_" not in msg
+def test_message_contains_translated_summary_header_and_link():
+    msg = _format_tweet(make_tweet(42), SUMMARY_FR, LABEL, HANDLE, "#FED #Dollar")
+    assert msg.startswith(SUMMARY_FR)
+    assert f"🐦 *{LABEL}* (@{HANDLE})" in msg
+    assert "[Voir le tweet](https://twitter.com/deitaone/status/42)" in msg
+    assert msg.endswith("#FED #Dollar")
 
 
-def test_short_tweet_no_duplicate_translation():
-    """When translated == original, no translation block."""
-    msg = _format_tweet(make_tweet(), SHORT, SHORT, LABEL, HANDLE, summary=SUMMARY)
-    assert "🇫🇷 *Traduction:*" not in msg
+def test_no_hashtags_section_when_empty():
+    msg = _format_tweet(make_tweet(), SUMMARY_FR, LABEL, HANDLE)
+    assert msg.endswith("[Voir le tweet](https://twitter.com/deitaone/status/123456789)")
 
 
-def test_long_tweet_shows_only_summary():
-    msg = _format_tweet(make_tweet(), LONG, TRANSLATED, LABEL, HANDLE, summary=SUMMARY)
-    assert f"_{SUMMARY}_" in msg
-    assert LONG not in msg
-    assert "🇫🇷 *Traduction:*" not in msg
-
-
-def test_long_tweet_no_summary_falls_back_to_original():
-    """If summarize_fn wasn't called (empty summary), show full original."""
-    msg = _format_tweet(make_tweet(), LONG, TRANSLATED, LABEL, HANDLE, summary="")
-    assert LONG in msg
-    assert "🇫🇷 *Traduction:*" in msg
-
-
-def test_header_and_link_always_present():
-    tweet = make_tweet(42)
-    for text, summary in [(SHORT, SUMMARY), (LONG, SUMMARY)]:
-        msg = _format_tweet(tweet, text, TRANSLATED, LABEL, HANDLE, summary=summary)
-        assert f"🐦 *{LABEL}* (@{HANDLE})" in msg
-        assert "[Voir le tweet](https://twitter.com/deitaone/status/42)" in msg
-
-
-def test_too_long_message_uses_summary_instead_of_cutting():
-    huge = "B" * 4500
-    msg = _format_tweet(make_tweet(), SHORT, huge, LABEL, HANDLE, summary=SUMMARY)
-    assert f"_{SUMMARY}_" in msg
+def test_oversized_text_still_fits_in_one_message():
+    text = "La Fed a parlé. " * 400
+    msg = _format_tweet(make_tweet(), text, LABEL, HANDLE, "#FED")
     assert len(msg) <= _TELEGRAM_MAX_LEN
-
-
-def test_too_long_message_without_summary_keeps_full_translation():
-    huge = "B" * 4500
-    msg = _format_tweet(make_tweet(), "C" * 3000, huge, LABEL, HANDLE, summary="")
-    assert huge in msg
-    assert "C" * 3000 not in msg
+    assert "…" in msg
+    assert "[Voir le tweet]" in msg

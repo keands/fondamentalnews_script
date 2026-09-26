@@ -1,9 +1,8 @@
-"""Tests for full-text extraction, promo filter and message splitting."""
+"""Tests for full-text extraction, retweet skipping and promo filter."""
 
 from types import SimpleNamespace
 
 from bot.promo_filter import looks_promotional
-from bot.telegram_sender import split_message
 from bot.tweet_monitor import _extract_tweets
 
 LONG = "Powell: " + "inflation remains elevated. " * 30
@@ -24,16 +23,16 @@ def test_long_post_uses_note_tweet_full_text():
     assert handle == "DeItaone"
 
 
-def test_retweet_uses_original_full_text():
+def test_retweets_are_skipped():
     resp = _resp(
-        {"id": "2", "created_at": "2026-01-01T00:00:00Z", "author_id": "u1",
-         "text": "RT @federalreserve: Powell: infl…",
-         "referenced_tweets": [{"type": "retweeted", "id": "9"}]},
-        {"users": [{"id": "u1", "username": "DeItaone"}, {"id": "u2", "username": "federalreserve"}],
-         "tweets": [{"id": "9", "author_id": "u2", "text": "short", "note_tweet": {"text": LONG}}]},
+        [{"id": "2", "created_at": "2026-01-01T00:00:00Z", "author_id": "u1",
+          "text": "RT @federalreserve: Powell: infl…",
+          "referenced_tweets": [{"type": "retweeted", "id": "9"}]},
+         {"id": "3", "created_at": "2026-01-01T00:00:00Z", "author_id": "u1",
+          "text": "My take on this", "referenced_tweets": [{"type": "quoted", "id": "9"}]}],
+        {"users": [{"id": "u1", "username": "DeItaone"}]},
     )
-    [(tweet, _)] = _extract_tweets(resp)
-    assert tweet.rawContent == "RT @federalreserve: " + LONG
+    assert [t.id for t, _ in _extract_tweets(resp)] == ["3"]
 
 
 def test_promotional_tweets_detected():
@@ -55,11 +54,3 @@ def test_market_news_not_flagged_as_promotional():
         "*POWELL: WE ARE PREPARED TO ADJUST POLICY",
     ]:
         assert not looks_promotional(text), text
-
-
-def test_split_message_keeps_all_text():
-    text = "\n".join(f"line {i} " + "x" * 90 for i in range(100))
-    chunks = split_message(text, max_len=1000)
-    assert all(len(c) <= 1000 for c in chunks)
-    assert "".join(chunks).replace("\n", "") == text.replace("\n", "")
-    assert split_message("short") == ["short"]

@@ -37,14 +37,14 @@ class GeminiClient:
             return text
 
     async def summarize(self, text: str) -> str:
-        """Return a French summary of tweet text. Returns original text on failure."""
+        """Return a summary of tweet text (in the tweet's language). Returns "" on failure."""
         if not text or not text.strip():
             return ""
         try:
-            return await self._generate(SUMMARY_PROMPT + text) or text
+            return await self._generate(SUMMARY_PROMPT + text)
         except Exception:
             logger.exception("Gemini summarization failed")
-            return text
+            return ""
 
     async def is_promotional(self, text: str) -> bool:
         """Return True if the tweet is promotional/advertising content."""

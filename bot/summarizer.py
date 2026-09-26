@@ -5,13 +5,12 @@ import anthropic
 logger = logging.getLogger(__name__)
 
 SUMMARY_PROMPT = (
-    "Analyse ce tweet en français. S'il contient une citation directe (discours rapporté), "
-    "reproduis-la mot pour mot entre guillemets. Ensuite, résume en 2 lignes : qui a dit quoi et le contexte. "
-    "Si le tweet ne contient pas de citation directe, résume-le en 3 lignes courtes et précises. "
-    "Ajoute ensuite une ligne vide, puis une section commençant par \"📊 Impact :\" expliquant en 1-2 lignes "
-    "pourquoi c'est important pour les marchés (politique monétaire, inflation, croissance, risque, etc.). "
-    "Chaque phrase doit être complète. "
-    "Réponds uniquement avec la sortie, sans introduction.\n\n"
+    "Summarize this tweet in the same language as the tweet. If it contains a direct quote "
+    "(reported speech), reproduce it word for word in quotation marks, then summarize in 2 lines: "
+    "who said what and the context. Otherwise, summarize it in 3 short, precise lines. "
+    "Then add an empty line and a section starting with \"📊 Impact:\" explaining in 1-2 lines "
+    "why it matters for markets (monetary policy, inflation, growth, risk, etc.). "
+    "Every sentence must be complete. Reply only with the output, no introduction.\n\n"
 )
 
 
@@ -20,7 +19,7 @@ class Summarizer:
         self._client = anthropic.AsyncAnthropic(api_key=api_key)
 
     async def summarize(self, text: str) -> str:
-        """Return a French summary of tweet text, preserving direct quotes."""
+        """Return a summary of tweet text (in the tweet's language), preserving direct quotes."""
         if not text or not text.strip():
             return ""
         try:
@@ -35,7 +34,7 @@ class Summarizer:
             return msg.content[0].text.strip()
         except Exception:
             logger.exception("Summarization failed")
-            return text
+            return ""
 
     async def classify(self, text: str) -> str:
         """Return up to 5 French hashtags classifying the tweet topic and impacted instruments."""
