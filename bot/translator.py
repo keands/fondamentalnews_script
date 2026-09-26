@@ -18,11 +18,11 @@ class Translator:
         try:
             msg = await self._client.messages.create(
                 model="claude-haiku-4-5-20251001",
-                max_tokens=1024,
+                max_tokens=4096,
                 messages=[{
                     "role": "user",
                     "content": (
-                        "Traduis ce texte en français. Si le texte est déjà en français, "
+                        "Traduis ce texte en français, intégralement, sans rien omettre ni résumer. Si le texte est déjà en français, "
                         "retourne-le tel quel, sans explication. Réponds uniquement avec la traduction.\n\n"
                         + text
                     ),

@@ -13,9 +13,13 @@ from typing import Any
 
 import xdk
 
+from bot.promo_filter import looks_promotional
+
 logger = logging.getLogger(__name__)
 
 _MAX_TWEET_LEN = 280
+# Telegram caps messages at 4096 chars; keep room for the channel footer added by the sender.
+_TELEGRAM_MAX_LEN = 4000
 
 STATE_FILE = "state.json"
 
@@ -75,8 +79,10 @@ def _stream_worker(
     """Runs in a background thread — client.stream.posts() is a blocking generator."""
     try:
         for resp in client.stream.posts(
-            tweet_fields=["created_at"],
-            expansions=["author_id"],
+            # note_tweet carries the full text of long posts (>280 chars), which "text" truncates;
+            # referenced_tweets lets us recover the full original text of retweets.
+            tweet_fields=["created_at", "note_tweet", "referenced_tweets"],
+            expansions=["author_id", "referenced_tweets.id", "referenced_tweets.id.author_id"],
             user_fields=["username"],
             stream_config=_make_stream_config(),
         ):
@@ -89,6 +95,25 @@ def _stream_worker(
         loop.call_soon_threadsafe(out_queue.put_nowait, None)  # sentinel: stream ended
 
 
+def _full_text(item: dict) -> str:
+    """Return the untruncated text of a tweet payload (long posts store it in note_tweet)."""
+    note = item.get("note_tweet") or {}
+    return note.get("text") or item.get("text", "")
+
+
+def _tweet_text(item: dict, tweets_by_id: dict, users_by_id: dict) -> str:
+    """Return the full text of a tweet, resolving retweets (whose "text" is truncated) to the original."""
+    for ref in item.get("referenced_tweets") or []:
+        if ref.get("type") != "retweeted":
+            continue
+        original = tweets_by_id.get(ref.get("id"))
+        if original:
+            author = users_by_id.get(original.get("author_id"), "")
+            prefix = f"RT @{author}: " if author else ""
+            return prefix + _full_text(original)
+    return _full_text(item)
+
+
 def _extract_tweets(resp: Any) -> list[tuple[Tweet, str]]:
     """Return [(Tweet, handle), ...] for one streamed response."""
     data = resp.data
@@ -98,6 +123,7 @@ def _extract_tweets(resp: Any) -> list[tuple[Tweet, str]]:
 
     includes = resp.includes or {}
     users_by_id = {u.get("id"): u.get("username", "") for u in includes.get("users", [])}
+    tweets_by_id = {t.get("id"): t for t in includes.get("tweets", [])}
 
     results = []
     for item in items:
@@ -107,7 +133,7 @@ def _extract_tweets(resp: Any) -> list[tuple[Tweet, str]]:
             continue
         date = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
         handle = users_by_id.get(item.get("author_id"), "")
-        results.append((Tweet(id=str(tweet_id), rawContent=item.get("text", ""), date=date), handle))
+        results.append((Tweet(id=str(tweet_id), rawContent=_tweet_text(item, tweets_by_id, users_by_id), date=date), handle))
     return results
 
 
@@ -130,6 +156,7 @@ async def consume_stream(
     validate_fn=None,
     summarize_fn=None,
     classify_fn=None,
+    promo_fn=None,
 ) -> None:
     """Consume the X filtered stream and post new tweets to Telegram.
 
@@ -191,6 +218,11 @@ async def consume_stream(
                 label = handle_label[handle]
 
                 try:
+                    if looks_promotional(tweet.rawContent) or (
+                        promo_fn and await promo_fn(tweet.rawContent)
+                    ):
+                        logger.info("Skipped promotional tweet %s from @%s", tweet.id, handle)
+                        continue
                     if validate_fn and not await validate_fn(tweet.rawContent):
                         logger.info("Skipped irrelevant tweet %s from @%s", tweet.id, handle)
                         continue
@@ -198,7 +230,7 @@ async def consume_stream(
                         logger.info("Rate limit reached, dropping tweet %s from @%s", tweet.id, handle)
                         continue
                     original_text = tweet.rawContent
-                    translated = await translate_fn(original_text)
+                    translated = await translate_fn(original_text) if translate_fn else ""
                     summary = await summarize_fn(original_text) if summarize_fn else ""
                     hashtags = await classify_fn(translated or original_text) if classify_fn else ""
                     message = _format_tweet(tweet, original_text, translated, label, handle, summary, hashtags)
@@ -210,15 +242,21 @@ async def consume_stream(
 
 
 def _format_tweet(tweet, original: str, translated: str, label: str, handle: str, summary: str = "", hashtags: str = "") -> str:
+    """Build the Telegram message. Text is never cut: when the full tweet doesn't fit
+    in one Telegram message, the summary (or the French translation alone) is used instead."""
     url = f"https://twitter.com/{handle}/status/{tweet.id}"
-    parts = []
-    if summary and len(original) > _MAX_TWEET_LEN:
-        parts.append(f"_{summary}_")
-    else:
-        parts.append(original)
-        if translated and translated.strip() != original.strip():
-            parts += ["", "🇫🇷 *Traduction:*", translated]
-    parts += ["", f"🐦 *{label}* (@{handle})", f"[Voir le tweet]({url})"]
+    footer = ["", f"🐦 *{label}* (@{handle})", f"[Voir le tweet]({url})"]
     if hashtags:
-        parts += ["", hashtags]
-    return "\n".join(parts)
+        footer += ["", hashtags]
+
+    if not (summary and len(original) > _MAX_TWEET_LEN):
+        body = [original]
+        if translated and translated.strip() != original.strip():
+            body += ["", "🇫🇷 *Traduction:*", translated]
+        message = "\n".join(body + footer)
+        if len(message) <= _TELEGRAM_MAX_LEN:
+            return message
+        if not summary:
+            # No summary available: keep only the French version rather than cutting the text.
+            return "\n".join([translated or original] + footer)
+    return "\n".join([f"_{summary}_"] + footer)

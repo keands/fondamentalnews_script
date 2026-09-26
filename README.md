@@ -1,6 +1,6 @@
 # fondamentalnewsbot
 
-A Telegram bot that monitors financial news and posts market-moving information to a Telegram channel. It tracks economic calendar events and Twitter accounts, translates content to French, and uses Claude AI to filter for relevance.
+A Telegram bot that monitors financial news and posts market-moving information to a Telegram channel. It tracks economic calendar events and Twitter accounts, translates content to French (Google Gemini or Claude), and uses AI to filter for relevance and drop promotional tweets.
 
 ## Features
 
@@ -8,6 +8,8 @@ A Telegram bot that monitors financial news and posts market-moving information 
 - **Release Alerts** — detects when economic data is released (actual value becomes available) and sends an immediate alert
 - **Twitter Monitor** — streams configured X accounts in real-time via the official X API filtered stream, translates new tweets to French via Claude, and optionally summarizes them
 - **AI Relevance Filter** — uses Claude (Haiku) to skip tweets that carry no market-moving signal
+- **Promotion Filter** — never publishes promotional tweets (ads, promo codes, giveaways, newsletters/courses/webinars, "subscribe"/"sign up" calls…), using a keyword filter plus Gemini/Claude
+- **No truncation** — the full text of long posts and retweets is fetched; when a message would exceed Telegram's limit, a summary is posted instead
 - **Error Alerts** — sends scheduler errors to a private Telegram chat
 
 ## Prerequisites
@@ -17,6 +19,7 @@ A Telegram bot that monitors financial news and posts market-moving information 
 | Python | 3.12+ |
 | Telegram Bot Token | [BotFather](https://t.me/BotFather) |
 | Anthropic API key | [console.anthropic.com](https://console.anthropic.com) |
+| Gemini API key (optional) | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
 | X API Bearer Token | [developer.x.com](https://developer.x.com) — needs access to the filtered stream endpoint (pay-per-use plan or higher) |
 
 ## Setup
@@ -53,6 +56,10 @@ economic_calendar:
 
 claude:
   api_key: "YOUR_ANTHROPIC_KEY"  # optional — disables AI filter if omitted
+
+gemini:
+  api_key: "YOUR_GEMINI_KEY"     # optional — used for translation when set
+  model: "gemini-flash-latest"   # optional
 ```
 
 ### 2. Add an X API Bearer Token
@@ -151,6 +158,8 @@ fondamentalnewsbot/
     ├── tweet_monitor.py     # X filtered-stream consumer & formatting
     ├── telegram_sender.py   # Telegram message delivery
     ├── translator.py        # Claude translation
+    ├── gemini_client.py     # Gemini translation, summary & promotion check
+    ├── promo_filter.py      # Keyword-based promotional tweet filter
     ├── relevance.py         # Claude AI relevance filter
     └── summarizer.py        # Claude AI tweet summarizer
 ```
@@ -178,7 +187,14 @@ of activity flooding the channel.
 - `high` — High impact only
 
 ### `claude.api_key`
-Optional. If omitted, all tweets pass through without AI filtering and no summaries are generated.
+Optional. If omitted, all tweets pass through without AI filtering and no summaries are generated
+(unless a Gemini key is set, in which case Gemini generates the summaries).
+
+### `gemini.api_key` / `gemini.model`
+Optional. When set, tweets are translated to French with Google Gemini (instead of Claude), and Gemini
+also checks each tweet for promotional content. `model` defaults to `gemini-flash-latest`.
+
+Promotional tweets are always dropped by a keyword filter, even without any API key.
 
 ---
 

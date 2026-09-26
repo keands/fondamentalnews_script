@@ -17,6 +17,7 @@ from apscheduler.events import EVENT_JOB_ERROR
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot.economic_calendar import morning_digest, check_releases
+from bot.gemini_client import GeminiClient
 from bot.relevance import Relevance
 from bot.summarizer import Summarizer
 from bot.telegram_sender import TelegramSender
@@ -46,17 +47,31 @@ async def main() -> None:
         alert_chat_id=tg_cfg.get("alert_chat_id", ""),
     )
 
-    claude_cfg = config.get("claude", {})
+    claude_cfg = config.get("claude") or {}
     claude_api_key = claude_cfg.get("api_key", "")
-    translator = Translator(api_key=claude_api_key) if claude_api_key else None
-    translate_fn = translator.translate if translator else None
+    gemini_cfg = config.get("gemini") or {}
+    gemini_api_key = gemini_cfg.get("api_key", "")
+    gemini = (
+        GeminiClient(api_key=gemini_api_key, model=gemini_cfg.get("model", ""))
+        if gemini_api_key
+        else None
+    )
+
+    # Translation: Gemini when configured, otherwise Claude.
+    if gemini:
+        translate_fn = gemini.translate
+    elif claude_api_key:
+        translate_fn = Translator(api_key=claude_api_key).translate
+    else:
+        translate_fn = None
+    promo_fn = gemini.is_promotional if gemini else None
 
     state = load_state()
 
     relevance = Relevance(api_key=claude_api_key) if claude_api_key else None
     validate_fn = relevance.is_relevant if relevance else None
     summarizer = Summarizer(api_key=claude_api_key) if claude_api_key else None
-    summarize_fn = summarizer.summarize if summarizer else None
+    summarize_fn = summarizer.summarize if summarizer else (gemini.summarize if gemini else None)
     classify_fn = summarizer.classify if summarizer else None
 
     scheduler = AsyncIOScheduler()
@@ -103,6 +118,7 @@ async def main() -> None:
             validate_fn=validate_fn,
             summarize_fn=summarize_fn,
             classify_fn=classify_fn,
+            promo_fn=promo_fn,
         ),
         name="x_stream_consumer",
     )

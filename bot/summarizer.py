@@ -4,6 +4,16 @@ import anthropic
 
 logger = logging.getLogger(__name__)
 
+SUMMARY_PROMPT = (
+    "Analyse ce tweet en français. S'il contient une citation directe (discours rapporté), "
+    "reproduis-la mot pour mot entre guillemets. Ensuite, résume en 2 lignes : qui a dit quoi et le contexte. "
+    "Si le tweet ne contient pas de citation directe, résume-le en 3 lignes courtes et précises. "
+    "Ajoute ensuite une ligne vide, puis une section commençant par \"📊 Impact :\" expliquant en 1-2 lignes "
+    "pourquoi c'est important pour les marchés (politique monétaire, inflation, croissance, risque, etc.). "
+    "Chaque phrase doit être complète. "
+    "Réponds uniquement avec la sortie, sans introduction.\n\n"
+)
+
 
 class Summarizer:
     def __init__(self, api_key: str) -> None:
@@ -16,18 +26,10 @@ class Summarizer:
         try:
             msg = await self._client.messages.create(
                 model="claude-haiku-4-5-20251001",
-                max_tokens=400,
+                max_tokens=1024,
                 messages=[{
                     "role": "user",
-                    "content": (
-                        "Analyse ce tweet en français. S'il contient une citation directe (discours rapporté), "
-                        "reproduis-la mot pour mot entre guillemets. Ensuite, résume en 2 lignes : qui a dit quoi et le contexte. "
-                        "Si le tweet ne contient pas de citation directe, résume-le en 3 lignes courtes et précises. "
-                        "Ajoute ensuite une ligne vide, puis une section commençant par \"📊 Impact :\" expliquant en 1-2 lignes "
-                        "pourquoi c'est important pour les marchés (politique monétaire, inflation, croissance, risque, etc.). "
-                        "Réponds uniquement avec la sortie, sans introduction.\n\n"
-                        + text
-                    ),
+                    "content": SUMMARY_PROMPT + text,
                 }],
             )
             return msg.content[0].text.strip()

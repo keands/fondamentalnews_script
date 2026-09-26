@@ -1,7 +1,7 @@
 """Unit tests for _format_tweet conditional logic."""
 
 from types import SimpleNamespace
-from bot.tweet_monitor import _format_tweet, _MAX_TWEET_LEN
+from bot.tweet_monitor import _format_tweet, _MAX_TWEET_LEN, _TELEGRAM_MAX_LEN
 
 
 def make_tweet(tweet_id: int = 123456789):
@@ -50,3 +50,17 @@ def test_header_and_link_always_present():
         msg = _format_tweet(tweet, text, TRANSLATED, LABEL, HANDLE, summary=summary)
         assert f"🐦 *{LABEL}* (@{HANDLE})" in msg
         assert "[Voir le tweet](https://twitter.com/deitaone/status/42)" in msg
+
+
+def test_too_long_message_uses_summary_instead_of_cutting():
+    huge = "B" * 4500
+    msg = _format_tweet(make_tweet(), SHORT, huge, LABEL, HANDLE, summary=SUMMARY)
+    assert f"_{SUMMARY}_" in msg
+    assert len(msg) <= _TELEGRAM_MAX_LEN
+
+
+def test_too_long_message_without_summary_keeps_full_translation():
+    huge = "B" * 4500
+    msg = _format_tweet(make_tweet(), "C" * 3000, huge, LABEL, HANDLE, summary="")
+    assert huge in msg
+    assert "C" * 3000 not in msg
