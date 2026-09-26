@@ -6,7 +6,7 @@ A Telegram bot that monitors financial news and posts market-moving information 
 
 - **Morning Digest** — posts today's economic calendar events (ForexFactory) at 08:00 UTC, Mon–Fri
 - **Release Alerts** — detects when economic data is released (actual value becomes available) and sends an immediate alert
-- **Twitter Monitor** — streams configured X accounts in real-time via the official X API filtered stream, translates new tweets, summarizes them and translates the summary to French (Gemini or Claude)
+- **Twitter Monitor** — streams configured X accounts in real-time via the official X API filtered stream, summarizes new tweets and translates the summary to French (Gemini or Claude)
 - **AI Relevance Filter** — uses Claude (Haiku) to skip tweets that carry no market-moving signal
 - **Promotion Filter** — never publishes promotional tweets (ads, promo codes, giveaways, newsletters/courses/webinars, "subscribe"/"sign up" calls…), using a keyword filter plus Gemini/Claude
 - **Tweet lifecycle** — fetch the full tweet from X (long posts included, retweets skipped) → filter (promotion + relevance) → summarize → translate the summary to French → send **one** Telegram message per tweet
