@@ -10,7 +10,7 @@ A Telegram bot that monitors financial news and posts market-moving information 
 - **AI Relevance Filter** — uses Claude (Haiku) to skip tweets that carry no market-moving signal
 - **Promotion Filter** — never publishes promotional tweets (ads, promo codes, giveaways, newsletters/courses/webinars, "subscribe"/"sign up" calls…), using a keyword filter plus Gemini/Claude
 - **Tweet lifecycle** — fetch the full tweet from X (long posts included, retweets skipped) → filter (promotion + relevance) → summarize → translate the summary to French → send **one** Telegram message per tweet
-- **Error Alerts** — sends scheduler errors to a private Telegram chat
+- **Error Alerts** — forwards every logged warning/error (failed API requests, job errors, stream disconnects…) to a private Telegram chat
 
 ## Prerequisites
 
@@ -39,6 +39,8 @@ telegram:
   token: "YOUR_BOT_TOKEN"
   channel_id: "@your_channel"   # or numeric ID
   alert_chat_id: "YOUR_CHAT_ID" # your personal chat for error DMs
+  alert_level: "WARNING"        # optional: minimum log level forwarded (WARNING or ERROR)
+  alert_cooldown_seconds: 60    # optional: identical alerts are grouped within this window
 
 twitter:
   bearer_token: "YOUR_X_API_BEARER_TOKEN"
@@ -209,3 +211,5 @@ Ctrl+C
 ```
 
 The bot sends a startup (`✅ Bot started.`) and shutdown (`🛑 Bot stopped.`) notification to `alert_chat_id`.
+
+Every log record at `alert_level` or above (API request failures, scheduler job exceptions, X stream errors, etc.) is also forwarded there. Identical messages are sent at most once per `alert_cooldown_seconds`; repeats are counted in the next alert.

@@ -13,9 +13,9 @@ import sys
 from datetime import datetime, timezone
 
 import yaml
-from apscheduler.events import EVENT_JOB_ERROR
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from bot.alert_handler import TelegramAlertHandler
 from bot.economic_calendar import morning_digest, check_releases
 from bot.gemini_client import GeminiClient
 from bot.relevance import Relevance
@@ -47,6 +47,18 @@ async def main() -> None:
         alert_chat_id=tg_cfg.get("alert_chat_id", ""),
     )
 
+    # Forward every warning/error logged anywhere (API requests, jobs, stream…)
+    # to the alert chat. Scheduler job failures are logged by APScheduler itself.
+    if tg_cfg.get("alert_chat_id"):
+        logging.getLogger().addHandler(
+            TelegramAlertHandler(
+                send_alert=sender.send_alert,
+                loop=asyncio.get_running_loop(),
+                level=logging.getLevelName(str(tg_cfg.get("alert_level", "WARNING")).upper()),
+                cooldown=float(tg_cfg.get("alert_cooldown_seconds", 60)),
+            )
+        )
+
     claude_cfg = config.get("claude") or {}
     claude_api_key = claude_cfg.get("api_key", "")
     gemini_cfg = config.get("gemini") or {}
@@ -75,14 +87,6 @@ async def main() -> None:
     classify_fn = summarizer.classify if summarizer else None
 
     scheduler = AsyncIOScheduler()
-
-    def _on_job_error(event):
-        job_id = event.job_id
-        exc = event.exception
-        msg = f"⚠️ Bot error in job `{job_id}`:\n{type(exc).__name__}: {exc}"
-        asyncio.ensure_future(sender.send_alert(msg))
-
-    scheduler.add_listener(_on_job_error, EVENT_JOB_ERROR)
 
     cal_cfg = config.get("economic_calendar", {})
 
