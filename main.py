@@ -16,9 +16,9 @@ import yaml
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot.alert_handler import TelegramAlertHandler
-from bot.deepseek_client import DeepSeekClient
 from bot.economic_calendar import morning_digest, check_releases
 from bot.gemini_client import GeminiClient
+from bot.openrouter_client import OpenRouterClient
 from bot.relevance import Relevance
 from bot.summarizer import Summarizer
 from bot.telegram_sender import TelegramSender
@@ -71,32 +71,32 @@ async def main() -> None:
         else None
     )
 
-    deepseek_cfg = config.get("deepseek") or {}
-    deepseek_api_key = deepseek_cfg.get("api_key", "")
-    deepseek = (
-        DeepSeekClient(api_key=deepseek_api_key, model=deepseek_cfg.get("model", ""))
-        if deepseek_api_key
+    openrouter_cfg = config.get("openrouter") or {}
+    openrouter_api_key = openrouter_cfg.get("api_key", "")
+    openrouter = (
+        OpenRouterClient(api_key=openrouter_api_key, model=openrouter_cfg.get("model", ""))
+        if openrouter_api_key
         else None
     )
     relevance = Relevance(api_key=claude_api_key) if claude_api_key else None
     summarizer = Summarizer(api_key=claude_api_key) if claude_api_key else None
 
-    # DeepSeek handles every AI task when configured; Gemini/Claude are used otherwise.
-    # Translation: DeepSeek, then Gemini, then Claude — each retried, falling back to the next.
+    # OpenRouter (DeepSeek V4 Flash) handles every AI task when configured; Gemini/Claude otherwise.
+    # Translation: OpenRouter, then Gemini, then Claude — each retried, falling back to the next.
     providers = []
-    if deepseek:
-        providers.append(("DeepSeek", deepseek.translate))
+    if openrouter:
+        providers.append(("OpenRouter", openrouter.translate))
     if gemini:
         providers.append(("Gemini", gemini.translate))
     if claude_api_key:
         providers.append(("Claude", Translator(api_key=claude_api_key).translate))
     translate_fn = TranslationChain(providers).translate if providers else None
 
-    if deepseek:
-        summarize_fn = deepseek.summarize
-        validate_fn = deepseek.is_relevant
-        promo_fn = deepseek.is_promotional
-        classify_fn = deepseek.classify
+    if openrouter:
+        summarize_fn = openrouter.summarize
+        validate_fn = openrouter.is_relevant
+        promo_fn = openrouter.is_promotional
+        classify_fn = openrouter.classify
     else:
         summarize_fn = summarizer.summarize if summarizer else (gemini.summarize if gemini else None)
         validate_fn = relevance.is_relevant if relevance else None
