@@ -4,6 +4,7 @@ import logging
 
 from google import genai
 
+from bot.promo_filter import PROMO_PROMPT
 from bot.summarizer import SUMMARY_PROMPT
 from bot.translation import TRANSLATE_PROMPT
 
@@ -40,15 +41,7 @@ class GeminiClient:
         if not text or not text.strip():
             return False
         try:
-            answer = await self._generate(
-                "Ce tweet est-il de la promotion ou de la publicité ? C'est le cas s'il fait la "
-                "promotion d'un produit, service, abonnement, newsletter, formation, webinaire, "
-                "application, broker, code promo, concours/giveaway, lien d'affiliation, ou s'il "
-                "invite à s'abonner, s'inscrire ou acheter. Une information de marché ou une actualité "
-                "n'est PAS de la promotion.\n"
-                "Réponds uniquement par 'OUI' ou 'NON'.\n\n"
-                + text
-            )
+            answer = await self._generate(PROMO_PROMPT + text)
             return answer.upper().startswith("OUI")
         except Exception:
             logger.exception("Gemini promotion check failed — defaulting to not promotional")

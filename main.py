@@ -73,26 +73,37 @@ async def main() -> None:
 
     deepseek_cfg = config.get("deepseek") or {}
     deepseek_api_key = deepseek_cfg.get("api_key", "")
+    deepseek = (
+        DeepSeekClient(api_key=deepseek_api_key, model=deepseek_cfg.get("model", ""))
+        if deepseek_api_key
+        else None
+    )
+    relevance = Relevance(api_key=claude_api_key) if claude_api_key else None
+    summarizer = Summarizer(api_key=claude_api_key) if claude_api_key else None
 
+    # DeepSeek handles every AI task when configured; Gemini/Claude are used otherwise.
     # Translation: DeepSeek, then Gemini, then Claude — each retried, falling back to the next.
     providers = []
-    if deepseek_api_key:
-        deepseek = DeepSeekClient(api_key=deepseek_api_key, model=deepseek_cfg.get("model", ""))
+    if deepseek:
         providers.append(("DeepSeek", deepseek.translate))
     if gemini:
         providers.append(("Gemini", gemini.translate))
     if claude_api_key:
         providers.append(("Claude", Translator(api_key=claude_api_key).translate))
     translate_fn = TranslationChain(providers).translate if providers else None
-    promo_fn = gemini.is_promotional if gemini else None
+
+    if deepseek:
+        summarize_fn = deepseek.summarize
+        validate_fn = deepseek.is_relevant
+        promo_fn = deepseek.is_promotional
+        classify_fn = deepseek.classify
+    else:
+        summarize_fn = summarizer.summarize if summarizer else (gemini.summarize if gemini else None)
+        validate_fn = relevance.is_relevant if relevance else None
+        promo_fn = gemini.is_promotional if gemini else None
+        classify_fn = summarizer.classify if summarizer else None
 
     state = load_state()
-
-    relevance = Relevance(api_key=claude_api_key) if claude_api_key else None
-    validate_fn = relevance.is_relevant if relevance else None
-    summarizer = Summarizer(api_key=claude_api_key) if claude_api_key else None
-    summarize_fn = summarizer.summarize if summarizer else (gemini.summarize if gemini else None)
-    classify_fn = summarizer.classify if summarizer else None
 
     scheduler = AsyncIOScheduler()
 

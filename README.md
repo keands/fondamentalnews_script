@@ -65,7 +65,7 @@ gemini:
   model: "gemini-flash-latest"   # optional
 
 deepseek:
-  api_key: "YOUR_DEEPSEEK_KEY"   # optional — primary translator
+  api_key: "YOUR_DEEPSEEK_KEY"   # optional — handles every AI task when set
   model: "deepseek-v4-flash"     # optional
 ```
 
@@ -166,7 +166,7 @@ fondamentalnewsbot/
     ├── telegram_sender.py   # Telegram message delivery
     ├── translator.py        # Claude translation
     ├── gemini_client.py     # Gemini translation, summary & promotion check
-    ├── deepseek_client.py   # DeepSeek translation
+    ├── deepseek_client.py   # DeepSeek: summary, translation, relevance, promo, hashtags
     ├── translation.py       # Translation retries & provider fallback
     ├── promo_filter.py      # Keyword-based promotional tweet filter
     ├── relevance.py         # Claude AI relevance filter
@@ -204,7 +204,9 @@ Optional. When set, Gemini is a translation fallback (after DeepSeek), and Gemin
 also checks each tweet for promotional content. `model` defaults to `gemini-flash-latest`.
 
 ### `deepseek.api_key` / `deepseek.model`
-Optional. DeepSeek is the primary translator (Gemini and Claude are fallbacks). `model` defaults to `deepseek-v4-flash`.
+Optional. When set, DeepSeek handles **every** AI task: summary, translation, relevance filter,
+promotion check and hashtags (each call retried twice on errors). Gemini and Claude are then only used
+as translation fallbacks. Without DeepSeek, the bot uses Claude/Gemini as before. `model` defaults to `deepseek-v4-flash`.
 
 ### Translation fallback
 Translation tries each configured provider in order — **DeepSeek → Gemini → Claude**. Each provider is
