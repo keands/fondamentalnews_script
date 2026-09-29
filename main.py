@@ -74,13 +74,13 @@ async def main() -> None:
     deepseek_cfg = config.get("deepseek") or {}
     deepseek_api_key = deepseek_cfg.get("api_key", "")
 
-    # Translation: Gemini, then DeepSeek, then Claude — each retried, falling back to the next.
+    # Translation: DeepSeek, then Gemini, then Claude — each retried, falling back to the next.
     providers = []
-    if gemini:
-        providers.append(("Gemini", gemini.translate))
     if deepseek_api_key:
         deepseek = DeepSeekClient(api_key=deepseek_api_key, model=deepseek_cfg.get("model", ""))
         providers.append(("DeepSeek", deepseek.translate))
+    if gemini:
+        providers.append(("Gemini", gemini.translate))
     if claude_api_key:
         providers.append(("Claude", Translator(api_key=claude_api_key).translate))
     translate_fn = TranslationChain(providers).translate if providers else None

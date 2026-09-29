@@ -1,4 +1,4 @@
-"""Translation with retries and provider fallback (Gemini -> DeepSeek -> Claude)."""
+"""Translation with retries and provider fallback (DeepSeek -> Gemini -> Claude)."""
 
 import asyncio
 import logging
