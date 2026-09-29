@@ -1,4 +1,4 @@
-"""Translation with retries and provider fallback (DeepSeek -> Gemini -> Claude)."""
+"""Translation with retries and provider fallback (OpenRouter -> Gemini -> Claude)."""
 
 import asyncio
 import logging

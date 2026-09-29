@@ -1,10 +1,10 @@
-"""Tests for DeepSeekClient against a local fake API."""
+"""Tests for OpenRouterClient against a local fake API."""
 
 import asyncio
 
 from aiohttp import web
 
-import bot.deepseek_client as ds
+import bot.openrouter_client as ds
 
 
 def _serve(answers):
@@ -16,20 +16,22 @@ def _serve(answers):
         status, content = answers[min(len(requests), len(answers)) - 1]
         if status != 200:
             return web.Response(status=status, text="error")
+        if isinstance(content, dict):
+            return web.json_response(content)
         return web.json_response({"choices": [{"message": {"content": content}}]})
 
     async def run(coro_fn):
         app = web.Application()
-        app.router.add_post("/chat/completions", handler)
+        app.router.add_post("/api/v1/chat/completions", handler)
         runner = web.AppRunner(app)
         await runner.setup()
         site = web.TCPSite(runner, "127.0.0.1", 0)
         await site.start()
         port = site._server.sockets[0].getsockname()[1]
         old = ds._API_URL
-        ds._API_URL = f"http://127.0.0.1:{port}/chat/completions"
+        ds._API_URL = f"http://127.0.0.1:{port}/api/v1/chat/completions"
         try:
-            return await coro_fn(ds.DeepSeekClient("key", retry_delays=(0, 0)))
+            return await coro_fn(ds.OpenRouterClient("key", retry_delays=(0, 0)))
         finally:
             ds._API_URL = old
             await runner.cleanup()
@@ -41,7 +43,7 @@ def test_summarize_retries_after_429():
     run, requests = _serve([(429, ""), (200, "Résumé")])
     assert asyncio.run(run(lambda c: c.summarize("Powell spoke"))) == "Résumé"
     assert len(requests) == 2
-    assert requests[0]["model"] == "deepseek-v4-flash"
+    assert requests[0]["model"] == "deepseek/deepseek-v4-flash"
 
 
 def test_yes_no_answers():
@@ -69,3 +71,9 @@ def test_translate_does_not_retry_itself():
     except RuntimeError:
         pass
     assert len(requests) == 1
+
+
+def test_error_field_in_200_response_is_retried():
+    run, requests = _serve([(200, {"error": {"code": 429, "message": "rate limited"}}), (200, "Résumé")])
+    assert asyncio.run(run(lambda c: c.summarize("Powell spoke"))) == "Résumé"
+    assert len(requests) == 2

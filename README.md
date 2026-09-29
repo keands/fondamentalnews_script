@@ -1,12 +1,12 @@
 # fondamentalnewsbot
 
-A Telegram bot that monitors financial news and posts market-moving information to a Telegram channel. It tracks economic calendar events and Twitter accounts, translates content to French (DeepSeek, Gemini or Claude), and uses AI to filter for relevance and drop promotional tweets.
+A Telegram bot that monitors financial news and posts market-moving information to a Telegram channel. It tracks economic calendar events and Twitter accounts, translates content to French (DeepSeek V4 Flash via OpenRouter, Gemini or Claude), and uses AI to filter for relevance and drop promotional tweets.
 
 ## Features
 
 - **Morning Digest** — posts today's economic calendar events (ForexFactory) at 08:00 UTC, Mon–Fri
 - **Release Alerts** — detects when economic data is released (actual value becomes available) and sends an immediate alert
-- **Twitter Monitor** — streams configured X accounts in real-time via the official X API filtered stream, summarizes new tweets and translates the summary to French (DeepSeek, Gemini or Claude)
+- **Twitter Monitor** — streams configured X accounts in real-time via the official X API filtered stream, summarizes new tweets and translates the summary to French (DeepSeek V4 Flash via OpenRouter, Gemini or Claude)
 - **AI Relevance Filter** — uses Claude (Haiku) to skip tweets that carry no market-moving signal
 - **Promotion Filter** — never publishes promotional tweets (ads, promo codes, giveaways, newsletters/courses/webinars, "subscribe"/"sign up" calls…), using a keyword filter plus Gemini/Claude
 - **Tweet lifecycle** — fetch the full tweet from X (long posts included, retweets skipped) → filter (promotion + relevance) → summarize → translate the summary to French → send **one** Telegram message per tweet
@@ -20,7 +20,7 @@ A Telegram bot that monitors financial news and posts market-moving information 
 | Telegram Bot Token | [BotFather](https://t.me/BotFather) |
 | Anthropic API key | [console.anthropic.com](https://console.anthropic.com) |
 | Gemini API key (optional) | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
-| DeepSeek API key (optional) | [platform.deepseek.com](https://platform.deepseek.com) |
+| OpenRouter API key (optional) | [openrouter.ai/keys](https://openrouter.ai/keys) |
 | X API Bearer Token | [developer.x.com](https://developer.x.com) — needs access to the filtered stream endpoint (pay-per-use plan or higher) |
 
 ## Setup
@@ -64,9 +64,9 @@ gemini:
   api_key: "YOUR_GEMINI_KEY"     # optional — used for translation when set
   model: "gemini-flash-latest"   # optional
 
-deepseek:
-  api_key: "YOUR_DEEPSEEK_KEY"   # optional — handles every AI task when set
-  model: "deepseek-v4-flash"     # optional
+openrouter:
+  api_key: "YOUR_OPENROUTER_KEY"        # optional — handles every AI task when set
+  model: "deepseek/deepseek-v4-flash"   # optional
 ```
 
 ### 2. Add an X API Bearer Token
@@ -166,7 +166,7 @@ fondamentalnewsbot/
     ├── telegram_sender.py   # Telegram message delivery
     ├── translator.py        # Claude translation
     ├── gemini_client.py     # Gemini translation, summary & promotion check
-    ├── deepseek_client.py   # DeepSeek: summary, translation, relevance, promo, hashtags
+    ├── openrouter_client.py # OpenRouter (DeepSeek V4 Flash): summary, translation, relevance, promo, hashtags
     ├── translation.py       # Translation retries & provider fallback
     ├── promo_filter.py      # Keyword-based promotional tweet filter
     ├── relevance.py         # Claude AI relevance filter
@@ -200,16 +200,17 @@ Optional. If omitted, all tweets pass through without AI filtering and no summar
 (unless a Gemini key is set, in which case Gemini generates the summaries).
 
 ### `gemini.api_key` / `gemini.model`
-Optional. When set, Gemini is a translation fallback (after DeepSeek), and Gemini
+Optional. When set, Gemini is a translation fallback (after OpenRouter), and Gemini
 also checks each tweet for promotional content. `model` defaults to `gemini-flash-latest`.
 
-### `deepseek.api_key` / `deepseek.model`
-Optional. When set, DeepSeek handles **every** AI task: summary, translation, relevance filter,
+### `openrouter.api_key` / `openrouter.model`
+Optional. When set, the OpenRouter model (DeepSeek V4 Flash by default) handles **every** AI task: summary, translation, relevance filter,
 promotion check and hashtags (each call retried twice on errors). Gemini and Claude are then only used
-as translation fallbacks. Without DeepSeek, the bot uses Claude/Gemini as before. `model` defaults to `deepseek-v4-flash`.
+as translation fallbacks. Without OpenRouter, the bot uses Claude/Gemini as before. `model` defaults to `deepseek/deepseek-v4-flash`
+(any OpenRouter model ID works).
 
 ### Translation fallback
-Translation tries each configured provider in order — **DeepSeek → Gemini → Claude**. Each provider is
+Translation tries each configured provider in order — **OpenRouter → Gemini → Claude**. Each provider is
 retried twice (after 2 s and 5 s) on errors such as quota exhaustion (HTTP 429) or an empty answer
 before moving to the next one. If every provider fails, the message is sent untranslated and an error
 is sent to `alert_chat_id`.
