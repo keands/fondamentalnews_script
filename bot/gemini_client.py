@@ -4,7 +4,9 @@ import logging
 
 from google import genai
 
+from bot.promo_filter import PROMO_PROMPT
 from bot.summarizer import SUMMARY_PROMPT
+from bot.translation import TRANSLATE_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -20,21 +22,9 @@ class GeminiClient:
         resp = await self._client.aio.models.generate_content(model=self._model, contents=prompt)
         return (resp.text or "").strip()
 
-    async def translate(self, text: str, target_lang: str = "FR") -> str:
-        """Translate text to French. Returns original text on failure."""
-        if not text or not text.strip():
-            return text
-        try:
-            translated = await self._generate(
-                "Traduis ce texte en français, intégralement, sans rien omettre ni résumer. "
-                "Si le texte est déjà en français, retourne-le tel quel, sans explication. "
-                "Réponds uniquement avec la traduction.\n\n"
-                + text
-            )
-            return translated or text
-        except Exception:
-            logger.exception("Gemini translation failed, returning original text")
-            return text
+    async def translate(self, text: str) -> str:
+        """Translate text to French. Raises on failure (handled by TranslationChain)."""
+        return await self._generate(TRANSLATE_PROMPT + text)
 
     async def summarize(self, text: str) -> str:
         """Return a summary of tweet text (in the tweet's language). Returns "" on failure."""
@@ -51,15 +41,7 @@ class GeminiClient:
         if not text or not text.strip():
             return False
         try:
-            answer = await self._generate(
-                "Ce tweet est-il de la promotion ou de la publicité ? C'est le cas s'il fait la "
-                "promotion d'un produit, service, abonnement, newsletter, formation, webinaire, "
-                "application, broker, code promo, concours/giveaway, lien d'affiliation, ou s'il "
-                "invite à s'abonner, s'inscrire ou acheter. Une information de marché ou une actualité "
-                "n'est PAS de la promotion.\n"
-                "Réponds uniquement par 'OUI' ou 'NON'.\n\n"
-                + text
-            )
+            answer = await self._generate(PROMO_PROMPT + text)
             return answer.upper().startswith("OUI")
         except Exception:
             logger.exception("Gemini promotion check failed — defaulting to not promotional")

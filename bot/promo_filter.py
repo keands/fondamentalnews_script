@@ -30,6 +30,15 @@ _PROMO_PATTERNS = [
     r"(^|\s)#(ad|ads|sponsored|promo|pub)\b",
 ]
 
+PROMO_PROMPT = (
+    "Ce tweet est-il de la promotion ou de la publicité ? C'est le cas s'il fait la "
+    "promotion d'un produit, service, abonnement, newsletter, formation, webinaire, "
+    "application, broker, code promo, concours/giveaway, lien d'affiliation, ou s'il "
+    "invite à s'abonner, s'inscrire ou acheter. Une information de marché ou une actualité "
+    "n'est PAS de la promotion.\n"
+    "Réponds uniquement par 'OUI' ou 'NON'.\n\n"
+)
+
 _PROMO_RE = re.compile("|".join(_PROMO_PATTERNS), re.IGNORECASE)
 
 

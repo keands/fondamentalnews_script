@@ -13,6 +13,14 @@ SUMMARY_PROMPT = (
     "Every sentence must be complete. Reply only with the output, no introduction.\n\n"
 )
 
+CLASSIFY_PROMPT = (
+    "Génère 1 à 5 hashtags en FRANÇAIS pour catégoriser ce tweet financier. "
+    "Inclus : (1) l'institution/thème macro (ex: #FED #BCE #BoE #BoJ #Inflation #Taux #PIB #Emploi), "
+    "et (2) le ou les instruments financiers impactés parmi : "
+    "#Actions #Obligations #Or #Pétrole #Devises #Dollar #Euro #Crypto #Matières #Immobilier. "
+    "Réponds uniquement avec les hashtags séparés par des espaces, rien d'autre.\n\n"
+)
+
 
 class Summarizer:
     def __init__(self, api_key: str) -> None:
@@ -46,14 +54,7 @@ class Summarizer:
                 max_tokens=50,
                 messages=[{
                     "role": "user",
-                    "content": (
-                        "Génère 1 à 5 hashtags en FRANÇAIS pour catégoriser ce tweet financier. "
-                        "Inclus : (1) l'institution/thème macro (ex: #FED #BCE #BoE #BoJ #Inflation #Taux #PIB #Emploi), "
-                        "et (2) le ou les instruments financiers impactés parmi : "
-                        "#Actions #Obligations #Or #Pétrole #Devises #Dollar #Euro #Crypto #Matières #Immobilier. "
-                        "Réponds uniquement avec les hashtags séparés par des espaces, rien d'autre.\n\n"
-                        + text
-                    ),
+                    "content": CLASSIFY_PROMPT + text,
                 }],
             )
             return msg.content[0].text.strip()

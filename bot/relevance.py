@@ -4,6 +4,17 @@ import anthropic
 
 logger = logging.getLogger(__name__)
 
+RELEVANCE_PROMPT = (
+    "Does this tweet contain a market-moving signal? "
+    "A market-moving signal is actionable information such as: interest rate decisions, "
+    "inflation or GDP data releases, central bank policy changes, recession warnings, "
+    "earnings surprises, or breaking financial news.\n"
+    "Promotional content is NEVER a market-moving signal: answer 'NO' for ads, sponsored posts, "
+    "self-promotion (newsletters, courses, webinars, apps, brokers, trading signals, subscriptions), "
+    "promo codes, giveaways, affiliate links or invitations to subscribe, sign up or buy.\n"
+    "Respond with ONLY 'YES' or 'NO'.\n\n"
+)
+
 
 class Relevance:
     def __init__(self, api_key: str) -> None:
@@ -19,17 +30,7 @@ class Relevance:
                 max_tokens=5,
                 messages=[{
                     "role": "user",
-                    "content": (
-                        "Does this tweet contain a market-moving signal? "
-                        "A market-moving signal is actionable information such as: interest rate decisions, "
-                        "inflation or GDP data releases, central bank policy changes, recession warnings, "
-                        "earnings surprises, or breaking financial news.\n"
-                        "Promotional content is NEVER a market-moving signal: answer 'NO' for ads, sponsored posts, "
-                        "self-promotion (newsletters, courses, webinars, apps, brokers, trading signals, subscriptions), "
-                        "promo codes, giveaways, affiliate links or invitations to subscribe, sign up or buy.\n"
-                        "Respond with ONLY 'YES' or 'NO'.\n\n"
-                        + text
-                    ),
+                    "content": RELEVANCE_PROMPT + text,
                 }],
             )
             return msg.content[0].text.strip().upper() == "YES"
