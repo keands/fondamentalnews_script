@@ -5,6 +5,7 @@ import logging
 from google import genai
 
 from bot.summarizer import SUMMARY_PROMPT
+from bot.translation import TRANSLATE_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -20,21 +21,9 @@ class GeminiClient:
         resp = await self._client.aio.models.generate_content(model=self._model, contents=prompt)
         return (resp.text or "").strip()
 
-    async def translate(self, text: str, target_lang: str = "FR") -> str:
-        """Translate text to French. Returns original text on failure."""
-        if not text or not text.strip():
-            return text
-        try:
-            translated = await self._generate(
-                "Traduis ce texte en français, intégralement, sans rien omettre ni résumer. "
-                "Si le texte est déjà en français, retourne-le tel quel, sans explication. "
-                "Réponds uniquement avec la traduction.\n\n"
-                + text
-            )
-            return translated or text
-        except Exception:
-            logger.exception("Gemini translation failed, returning original text")
-            return text
+    async def translate(self, text: str) -> str:
+        """Translate text to French. Raises on failure (handled by TranslationChain)."""
+        return await self._generate(TRANSLATE_PROMPT + text)
 
     async def summarize(self, text: str) -> str:
         """Return a summary of tweet text (in the tweet's language). Returns "" on failure."""

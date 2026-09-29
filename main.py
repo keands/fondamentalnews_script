@@ -16,11 +16,13 @@ import yaml
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot.alert_handler import TelegramAlertHandler
+from bot.deepseek_client import DeepSeekClient
 from bot.economic_calendar import morning_digest, check_releases
 from bot.gemini_client import GeminiClient
 from bot.relevance import Relevance
 from bot.summarizer import Summarizer
 from bot.telegram_sender import TelegramSender
+from bot.translation import TranslationChain
 from bot.translator import Translator
 from bot.tweet_monitor import consume_stream, load_state, save_state
 
@@ -69,13 +71,19 @@ async def main() -> None:
         else None
     )
 
-    # Translation: Gemini when configured, otherwise Claude.
+    deepseek_cfg = config.get("deepseek") or {}
+    deepseek_api_key = deepseek_cfg.get("api_key", "")
+
+    # Translation: Gemini, then DeepSeek, then Claude — each retried, falling back to the next.
+    providers = []
     if gemini:
-        translate_fn = gemini.translate
-    elif claude_api_key:
-        translate_fn = Translator(api_key=claude_api_key).translate
-    else:
-        translate_fn = None
+        providers.append(("Gemini", gemini.translate))
+    if deepseek_api_key:
+        deepseek = DeepSeekClient(api_key=deepseek_api_key, model=deepseek_cfg.get("model", ""))
+        providers.append(("DeepSeek", deepseek.translate))
+    if claude_api_key:
+        providers.append(("Claude", Translator(api_key=claude_api_key).translate))
+    translate_fn = TranslationChain(providers).translate if providers else None
     promo_fn = gemini.is_promotional if gemini else None
 
     state = load_state()

@@ -20,6 +20,7 @@ A Telegram bot that monitors financial news and posts market-moving information 
 | Telegram Bot Token | [BotFather](https://t.me/BotFather) |
 | Anthropic API key | [console.anthropic.com](https://console.anthropic.com) |
 | Gemini API key (optional) | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) |
+| DeepSeek API key (optional) | [platform.deepseek.com](https://platform.deepseek.com) |
 | X API Bearer Token | [developer.x.com](https://developer.x.com) — needs access to the filtered stream endpoint (pay-per-use plan or higher) |
 
 ## Setup
@@ -62,6 +63,10 @@ claude:
 gemini:
   api_key: "YOUR_GEMINI_KEY"     # optional — used for translation when set
   model: "gemini-flash-latest"   # optional
+
+deepseek:
+  api_key: "YOUR_DEEPSEEK_KEY"   # optional — translation fallback
+  model: "deepseek-v4-flash"     # optional
 ```
 
 ### 2. Add an X API Bearer Token
@@ -161,6 +166,8 @@ fondamentalnewsbot/
     ├── telegram_sender.py   # Telegram message delivery
     ├── translator.py        # Claude translation
     ├── gemini_client.py     # Gemini translation, summary & promotion check
+    ├── deepseek_client.py   # DeepSeek translation
+    ├── translation.py       # Translation retries & provider fallback
     ├── promo_filter.py      # Keyword-based promotional tweet filter
     ├── relevance.py         # Claude AI relevance filter
     └── summarizer.py        # Claude AI tweet summarizer
@@ -195,6 +202,15 @@ Optional. If omitted, all tweets pass through without AI filtering and no summar
 ### `gemini.api_key` / `gemini.model`
 Optional. When set, tweets are translated to French with Google Gemini (instead of Claude), and Gemini
 also checks each tweet for promotional content. `model` defaults to `gemini-flash-latest`.
+
+### `deepseek.api_key` / `deepseek.model`
+Optional. DeepSeek is used as a translation fallback. `model` defaults to `deepseek-v4-flash`.
+
+### Translation fallback
+Translation tries each configured provider in order — **Gemini → DeepSeek → Claude**. Each provider is
+retried twice (after 2 s and 5 s) on errors such as quota exhaustion (HTTP 429) or an empty answer
+before moving to the next one. If every provider fails, the message is sent untranslated and an error
+is sent to `alert_chat_id`.
 
 Promotional tweets are always dropped by a keyword filter, even without any API key.
 

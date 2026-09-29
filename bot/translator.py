@@ -1,34 +1,19 @@
 """Claude-powered translation wrapper."""
 
-import logging
-
 import anthropic
 
-logger = logging.getLogger(__name__)
+from bot.translation import TRANSLATE_PROMPT
 
 
 class Translator:
     def __init__(self, api_key: str) -> None:
         self._client = anthropic.AsyncAnthropic(api_key=api_key)
 
-    async def translate(self, text: str, target_lang: str = "FR") -> str:
-        """Translate text to French. Returns original text on failure."""
-        if not text or not text.strip():
-            return text
-        try:
-            msg = await self._client.messages.create(
-                model="claude-haiku-4-5-20251001",
-                max_tokens=4096,
-                messages=[{
-                    "role": "user",
-                    "content": (
-                        "Traduis ce texte en français, intégralement, sans rien omettre ni résumer. Si le texte est déjà en français, "
-                        "retourne-le tel quel, sans explication. Réponds uniquement avec la traduction.\n\n"
-                        + text
-                    ),
-                }],
-            )
-            return msg.content[0].text.strip()
-        except Exception:
-            logger.exception("Translation failed, returning original text")
-            return text
+    async def translate(self, text: str) -> str:
+        """Translate text to French. Raises on failure (handled by TranslationChain)."""
+        msg = await self._client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=4096,
+            messages=[{"role": "user", "content": TRANSLATE_PROMPT + text}],
+        )
+        return msg.content[0].text.strip()
