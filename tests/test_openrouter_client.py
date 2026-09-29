@@ -44,6 +44,7 @@ def test_summarize_retries_after_429():
     assert asyncio.run(run(lambda c: c.summarize("Powell spoke"))) == "Résumé"
     assert len(requests) == 2
     assert requests[0]["model"] == "deepseek/deepseek-v4-flash"
+    assert requests[0]["reasoning"]["enabled"] is False
 
 
 def test_yes_no_answers():

@@ -18,6 +18,9 @@ _API_URL = "https://openrouter.ai/api/v1/chat/completions"
 _TIMEOUT = aiohttp.ClientTimeout(total=60)
 # Seconds to wait before each retry (429 / transient errors / empty answer).
 _RETRY_DELAYS = (2.0, 5.0)
+# Generous even for one-word answers: if the provider still reasons, reasoning tokens
+# count against max_tokens and a tight limit would leave the answer empty.
+_SHORT_ANSWER_TOKENS = 1024
 
 
 class OpenRouterClient:
@@ -31,6 +34,9 @@ class OpenRouterClient:
             "model": self._model,
             "messages": [{"role": "user", "content": prompt}],
             "max_tokens": max_tokens,
+            # DeepSeek V4 Flash reasons before answering by default; that is not needed here
+            # and reasoning tokens count against max_tokens.
+            "reasoning": {"enabled": False, "exclude": True},
             "stream": False,
         }
         headers = {"Authorization": f"Bearer {self._api_key}"}
@@ -46,7 +52,7 @@ class OpenRouterClient:
             raise ValueError("OpenRouter returned an empty answer")
         return answer
 
-    async def _chat(self, prompt: str, max_tokens: int = 1024) -> str:
+    async def _chat(self, prompt: str, max_tokens: int = 2048) -> str:
         """Send one prompt, retrying transient failures. Raises after the last attempt."""
         for attempt, delay in enumerate((0.0, *self._retry_delays), start=1):
             if delay:
@@ -77,7 +83,7 @@ class OpenRouterClient:
         if not text or not text.strip():
             return False
         try:
-            return (await self._chat(RELEVANCE_PROMPT + text, max_tokens=10)).upper().startswith("YES")
+            return (await self._chat(RELEVANCE_PROMPT + text, max_tokens=_SHORT_ANSWER_TOKENS)).upper().startswith("YES")
         except Exception:
             logger.exception("OpenRouter relevance check failed — defaulting to relevant")
             return True
@@ -87,7 +93,7 @@ class OpenRouterClient:
         if not text or not text.strip():
             return False
         try:
-            return (await self._chat(PROMO_PROMPT + text, max_tokens=10)).upper().startswith("OUI")
+            return (await self._chat(PROMO_PROMPT + text, max_tokens=_SHORT_ANSWER_TOKENS)).upper().startswith("OUI")
         except Exception:
             logger.exception("OpenRouter promotion check failed — defaulting to not promotional")
             return False
@@ -97,7 +103,7 @@ class OpenRouterClient:
         if not text or not text.strip():
             return ""
         try:
-            return await self._chat(CLASSIFY_PROMPT + text, max_tokens=100)
+            return await self._chat(CLASSIFY_PROMPT + text, max_tokens=_SHORT_ANSWER_TOKENS)
         except Exception:
             logger.exception("OpenRouter classification failed")
             return ""
