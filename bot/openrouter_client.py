@@ -23,6 +23,11 @@ _RETRY_DELAYS = (2.0, 5.0)
 _SHORT_ANSWER_TOKENS = 1024
 
 
+def _is_yes(answer: str) -> bool:
+    """The model may answer in the tweet's language rather than the prompt's: accept both."""
+    return answer.strip().strip("'\".*").upper().startswith(("YES", "OUI"))
+
+
 class OpenRouterClient:
     def __init__(self, api_key: str, model: str = DEFAULT_MODEL, retry_delays=_RETRY_DELAYS) -> None:
         self._api_key = api_key
@@ -83,7 +88,7 @@ class OpenRouterClient:
         if not text or not text.strip():
             return False
         try:
-            return (await self._chat(RELEVANCE_PROMPT + text, max_tokens=_SHORT_ANSWER_TOKENS)).upper().startswith("YES")
+            return _is_yes(await self._chat(RELEVANCE_PROMPT + text, max_tokens=_SHORT_ANSWER_TOKENS))
         except Exception:
             logger.exception("OpenRouter relevance check failed — defaulting to relevant")
             return True
@@ -93,7 +98,7 @@ class OpenRouterClient:
         if not text or not text.strip():
             return False
         try:
-            return (await self._chat(PROMO_PROMPT + text, max_tokens=_SHORT_ANSWER_TOKENS)).upper().startswith("OUI")
+            return _is_yes(await self._chat(PROMO_PROMPT + text, max_tokens=_SHORT_ANSWER_TOKENS))
         except Exception:
             logger.exception("OpenRouter promotion check failed — defaulting to not promotional")
             return False

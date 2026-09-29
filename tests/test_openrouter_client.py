@@ -52,6 +52,11 @@ def test_yes_no_answers():
     assert asyncio.run(run(lambda c: c.is_relevant("Fed hikes"))) is True
     run, _ = _serve([(200, "OUI")])
     assert asyncio.run(run(lambda c: c.is_promotional("Use code X"))) is True
+    # The model may answer in the tweet's language instead of the prompt's.
+    run, _ = _serve([(200, " YES")])
+    assert asyncio.run(run(lambda c: c.is_promotional("Use code X"))) is True
+    run, _ = _serve([(200, "NON")])
+    assert asyncio.run(run(lambda c: c.is_relevant("Bonjour"))) is False
 
 
 def test_failures_use_safe_defaults():

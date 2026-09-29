@@ -42,7 +42,7 @@ class GeminiClient:
             return False
         try:
             answer = await self._generate(PROMO_PROMPT + text)
-            return answer.upper().startswith("OUI")
+            return answer.upper().startswith(("OUI", "YES"))
         except Exception:
             logger.exception("Gemini promotion check failed — defaulting to not promotional")
             return False
