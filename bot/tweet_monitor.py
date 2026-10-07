@@ -50,7 +50,15 @@ def save_state(state: dict) -> None:
 def _sync_rules(client: xdk.Client, handles: list[str]) -> None:
     """Replace the stream's rule set with a single rule covering all configured handles."""
     rule_value = " OR ".join(f"from:{h}" for h in handles)
-    client.stream.update_rules(body={}, delete_all=True)
+    # The API rejects ?delete_all=true (HTTP 400): list existing rules and delete them by id.
+    existing_ids = []
+    for page in client.stream.get_rules():
+        for rule in page.data or []:
+            rid = rule.get("id") if isinstance(rule, dict) else getattr(rule, "id", None)
+            if rid:
+                existing_ids.append(rid)
+    if existing_ids:
+        client.stream.update_rules(body={"delete": {"ids": existing_ids}})
     client.stream.update_rules(body={"add": [{"value": rule_value, "tag": _STREAM_RULE_TAG}]})
     logger.info("Synced X stream rule: %s", rule_value)
 
