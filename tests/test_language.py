@@ -1,15 +1,13 @@
-"""Tests for the French-script guard."""
+"""Tests for the model-based French guard."""
 
 import asyncio
 
-from bot.language import force_french, is_french_script
+from bot.language import force_french, is_yes
 
 
-def test_is_french_script():
-    assert is_french_script("La BCE maintient ses taux — €, $ et 2,5 %")
-    assert not is_french_script("ФРС сохранила ставку")
-    assert not is_french_script("美联储维持利率不变")
-    assert not is_french_script("الفيدرالي يثبت الفائدة")
+def test_is_yes():
+    assert is_yes("OUI") and is_yes("'oui'.") and is_yes("**YES**")
+    assert not is_yes("NON")
 
 
 def test_force_french_retries_then_returns_empty():
@@ -18,9 +16,12 @@ def test_force_french_retries_then_returns_empty():
     async def fn(text):
         return next(answers)
 
-    assert asyncio.run(force_french(fn)("x")) == "Fed"
+    async def check(text):
+        return text == "Fed"
+
+    assert asyncio.run(force_french(fn, check)("x")) == "Fed"
 
     async def bad(text):
         return "美联储"
 
-    assert asyncio.run(force_french(bad)("x")) == ""
+    assert asyncio.run(force_french(bad, check)("x")) == ""

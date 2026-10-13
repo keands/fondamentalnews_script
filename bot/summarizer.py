@@ -2,6 +2,8 @@
 import logging
 import anthropic
 
+from bot.language import FRENCH_PROMPT, is_yes
+
 logger = logging.getLogger(__name__)
 
 SUMMARY_PROMPT = (
@@ -63,3 +65,16 @@ class Summarizer:
         except Exception:
             logger.exception("Classification failed")
             return ""
+
+    async def is_french(self, text: str) -> bool:
+        """Return True if the text is written in French. Fails closed (False) on error."""
+        try:
+            msg = await self._client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=5,
+                messages=[{"role": "user", "content": FRENCH_PROMPT + text}],
+            )
+            return is_yes(msg.content[0].text)
+        except Exception:
+            logger.exception("Language check failed — treating as not French")
+            return False

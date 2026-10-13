@@ -91,7 +91,14 @@ async def main() -> None:
         providers.append(("Gemini", gemini.translate))
     if claude_api_key:
         providers.append(("Claude", Translator(api_key=claude_api_key).translate))
-    translate_fn = TranslationChain(providers).translate if providers else None
+    # Language check by the model itself: OpenRouter, else Claude, else Gemini.
+    french_check = (
+        openrouter.is_french if openrouter
+        else summarizer.is_french if summarizer
+        else gemini.is_french if gemini
+        else None
+    )
+    translate_fn = TranslationChain(providers, is_french=french_check).translate if providers else None
 
     if openrouter:
         summarize_fn = openrouter.summarize
@@ -104,8 +111,8 @@ async def main() -> None:
         promo_fn = gemini.is_promotional if gemini else None
         classify_fn = summarizer.classify if summarizer else None
 
-    if summarize_fn:
-        summarize_fn = force_french(summarize_fn)
+    if summarize_fn and french_check:
+        summarize_fn = force_french(summarize_fn, french_check)
 
     state = load_state()
 

@@ -4,8 +4,6 @@ import asyncio
 import logging
 from typing import Awaitable, Callable
 
-from bot.language import is_french_script
-
 logger = logging.getLogger(__name__)
 
 TRANSLATE_PROMPT = (
@@ -19,17 +17,25 @@ TRANSLATE_PROMPT = (
 _RETRY_DELAYS = (2.0, 5.0)
 
 TranslateFn = Callable[[str], Awaitable[str]]
+CheckFn = Callable[[str], Awaitable[bool]]
+
+
+class TranslationError(Exception):
+    """No provider produced a valid French translation."""
 
 
 class TranslationChain:
     """Try each provider in order, retrying transient failures, until one returns a translation.
 
     Providers raise on failure (API error, quota, empty answer). If every provider fails,
-    an error is logged (forwarded to the alert chat) and the original text is returned.
+    an error is logged (forwarded to the alert chat) and TranslationError is raised so that
+    nothing is sent.
     """
 
-    def __init__(self, providers: list[tuple[str, TranslateFn]], retry_delays=_RETRY_DELAYS) -> None:
+    def __init__(self, providers: list[tuple[str, TranslateFn]], retry_delays=_RETRY_DELAYS,
+                 is_french: CheckFn | None = None) -> None:
         self._providers = providers
+        self._is_french = is_french
         self._retry_delays = retry_delays
 
     async def translate(self, text: str) -> str:
@@ -43,7 +49,7 @@ class TranslationChain:
                     translated = (await fn(text) or "").strip()
                     if not translated:
                         raise ValueError("empty translation")
-                    if not is_french_script(translated):
+                    if self._is_french and not await self._is_french(translated):
                         raise ValueError("translation not in French")
                     return translated
                 except Exception as exc:
@@ -51,5 +57,5 @@ class TranslationChain:
                                 name, attempt, type(exc).__name__, exc)
             logger.warning("%s translation failed after %d attempts, trying next provider",
                            name, len(self._retry_delays) + 1)
-        logger.error("All translation providers failed — message sent untranslated: %.100s", text)
-        return text
+        logger.error("All translation providers failed — message dropped: %.100s", text)
+        raise TranslationError("all translation providers failed")

@@ -233,10 +233,16 @@ async def consume_stream(
                     if not _allow_send(recent_sends, max_per_window, window_minutes * 60):
                         logger.info("Rate limit reached, dropping tweet %s from @%s", tweet.id, handle)
                         continue
-                    summary = await summarize_fn(tweet.rawContent) if summarize_fn else ""
-                    text = summary or tweet.rawContent
-                    translated = await translate_fn(text) if translate_fn else ""
-                    text = translated or text
+                    # Nothing is sent unless it is a clear French summary: no raw or untranslated text.
+                    text = tweet.rawContent
+                    if summarize_fn:
+                        text = await summarize_fn(tweet.rawContent)
+                        if not text:
+                            logger.warning("No French summary for tweet %s from @%s — not sent",
+                                           tweet.id, handle)
+                            continue
+                    if translate_fn:
+                        text = await translate_fn(text)  # raises if no valid French translation
                     hashtags = await classify_fn(text) if classify_fn else ""
                     await send_fn(_format_tweet(tweet, text, label, handle, hashtags))
                 except Exception:

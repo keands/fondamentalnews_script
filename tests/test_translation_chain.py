@@ -3,7 +3,9 @@
 import asyncio
 import logging
 
-from bot.translation import TranslationChain
+import pytest
+
+from bot.translation import TranslationChain, TranslationError
 
 
 def _run(coro):
@@ -46,16 +48,21 @@ def test_empty_answer_counts_as_failure():
     assert _run(chain.translate("Hello")) == "Bonjour"
 
 
-def test_all_fail_returns_original_and_logs_error(caplog):
+def test_all_fail_raises_and_logs_error(caplog):
     gemini, _ = _provider([RuntimeError("down")] * 3)
     chain = TranslationChain([("Gemini", gemini)], retry_delays=(0, 0))
-    with caplog.at_level(logging.INFO):
-        assert _run(chain.translate("Hello")) == "Hello"
+    with caplog.at_level(logging.INFO), pytest.raises(TranslationError):
+        _run(chain.translate("Hello"))
     assert any(r.levelno == logging.ERROR for r in caplog.records)
 
 
 def test_non_french_translation_falls_back_to_next_provider():
     gemini, _ = _provider(["Привет мир"] * 3)
     deepseek, _ = _provider(["Bonjour"])
-    chain = TranslationChain([("Gemini", gemini), ("DeepSeek", deepseek)], retry_delays=(0, 0))
+
+    async def is_french(text):
+        return text == "Bonjour"
+
+    chain = TranslationChain([("Gemini", gemini), ("DeepSeek", deepseek)],
+                             retry_delays=(0, 0), is_french=is_french)
     assert _run(chain.translate("Hello")) == "Bonjour"

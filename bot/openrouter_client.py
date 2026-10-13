@@ -6,6 +6,7 @@ import logging
 
 import aiohttp
 
+from bot.language import FRENCH_PROMPT
 from bot.promo_filter import PROMO_PROMPT
 from bot.relevance import RELEVANCE_PROMPT
 from bot.summarizer import CLASSIFY_PROMPT, SUMMARY_PROMPT
@@ -101,6 +102,14 @@ class OpenRouterClient:
             return _is_yes(await self._chat(PROMO_PROMPT + text, max_tokens=_SHORT_ANSWER_TOKENS))
         except Exception:
             logger.exception("OpenRouter promotion check failed — defaulting to not promotional")
+            return False
+
+    async def is_french(self, text: str) -> bool:
+        """Return True if the text is written in French. Fails closed (False) on error."""
+        try:
+            return _is_yes(await self._chat(FRENCH_PROMPT + text, max_tokens=_SHORT_ANSWER_TOKENS))
+        except Exception:
+            logger.exception("OpenRouter language check failed — treating as not French")
             return False
 
     async def classify(self, text: str) -> str:
