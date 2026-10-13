@@ -4,6 +4,8 @@ import asyncio
 import logging
 from typing import Awaitable, Callable
 
+from bot.language import is_french_script
+
 logger = logging.getLogger(__name__)
 
 TRANSLATE_PROMPT = (
@@ -41,6 +43,8 @@ class TranslationChain:
                     translated = (await fn(text) or "").strip()
                     if not translated:
                         raise ValueError("empty translation")
+                    if not is_french_script(translated):
+                        raise ValueError("translation not in French")
                     return translated
                 except Exception as exc:
                     logger.info("%s translation attempt %d failed: %s: %s",

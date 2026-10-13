@@ -22,6 +22,7 @@ from bot.openrouter_client import OpenRouterClient
 from bot.relevance import Relevance
 from bot.summarizer import Summarizer
 from bot.telegram_sender import TelegramSender
+from bot.language import force_french
 from bot.translation import TranslationChain
 from bot.translator import Translator
 from bot.tweet_monitor import consume_stream, load_state, save_state
@@ -102,6 +103,9 @@ async def main() -> None:
         validate_fn = relevance.is_relevant if relevance else None
         promo_fn = gemini.is_promotional if gemini else None
         classify_fn = summarizer.classify if summarizer else None
+
+    if summarize_fn:
+        summarize_fn = force_french(summarize_fn)
 
     state = load_state()
 

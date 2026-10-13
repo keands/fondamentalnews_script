@@ -52,3 +52,10 @@ def test_all_fail_returns_original_and_logs_error(caplog):
     with caplog.at_level(logging.INFO):
         assert _run(chain.translate("Hello")) == "Hello"
     assert any(r.levelno == logging.ERROR for r in caplog.records)
+
+
+def test_non_french_translation_falls_back_to_next_provider():
+    gemini, _ = _provider(["Привет мир"] * 3)
+    deepseek, _ = _provider(["Bonjour"])
+    chain = TranslationChain([("Gemini", gemini), ("DeepSeek", deepseek)], retry_delays=(0, 0))
+    assert _run(chain.translate("Hello")) == "Bonjour"
