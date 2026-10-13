@@ -9,7 +9,8 @@ logger = logging.getLogger(__name__)
 TRANSLATE_PROMPT = (
     "Traduis ce texte en français, intégralement, sans rien omettre ni résumer. "
     "Si le texte est déjà en français, retourne-le tel quel, sans explication. "
-    "Réponds uniquement avec la traduction.\n\n"
+    "Quelle que soit la langue source (russe, chinois, arabe, etc.), la réponse doit être "
+    "entièrement en français. Réponds uniquement avec la traduction.\n\n"
 )
 
 # Seconds to wait before each retry of the same provider (429 / transient errors).

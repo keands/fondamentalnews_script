@@ -74,7 +74,7 @@ class OpenRouterClient:
         return await self._request(TRANSLATE_PROMPT + text, max_tokens=4096)
 
     async def summarize(self, text: str) -> str:
-        """Return a summary of tweet text (in the tweet's language). Returns "" on failure."""
+        """Return a summary of tweet text (in French). Returns "" on failure."""
         if not text or not text.strip():
             return ""
         try:
