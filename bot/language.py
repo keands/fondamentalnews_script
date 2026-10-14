@@ -7,8 +7,8 @@ logger = logging.getLogger(__name__)
 
 FRENCH_PROMPT = (
     "Ce texte est-il rédigé entièrement en français (hors noms propres, sigles, tickers et "
-    "citations très courtes) ? Un texte en russe, chinois, arabe, anglais ou toute autre langue "
-    "est NON.\nRéponds uniquement par 'OUI' ou 'NON'.\n\n"
+    "citations très courtes) ? Toute autre langue différente du français est NON.\n"
+    "Réponds uniquement par 'OUI' ou 'NON'.\n\n"
 )
 
 TextFn = Callable[[str], Awaitable[str]]
