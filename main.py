@@ -15,16 +15,13 @@ from datetime import datetime, timezone
 import yaml
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
+from bot.ai import build_ai
 from bot.alert_handler import TelegramAlertHandler
+from bot.claude_client import ClaudeClient
 from bot.economic_calendar import morning_digest, check_releases
 from bot.gemini_client import GeminiClient
 from bot.openrouter_client import OpenRouterClient
-from bot.relevance import Relevance
-from bot.summarizer import Summarizer
 from bot.telegram_sender import TelegramSender
-from bot.language import force_french
-from bot.translation import TranslationChain
-from bot.translator import Translator
 from bot.tweet_monitor import consume_stream, load_state, save_state
 
 logging.basicConfig(
@@ -79,40 +76,17 @@ async def main() -> None:
         if openrouter_api_key
         else None
     )
-    relevance = Relevance(api_key=claude_api_key) if claude_api_key else None
-    summarizer = Summarizer(api_key=claude_api_key) if claude_api_key else None
-
-    # OpenRouter (DeepSeek V4 Flash) handles every AI task when configured; Gemini/Claude otherwise.
-    # Translation: OpenRouter, then Gemini, then Claude — each retried, falling back to the next.
+    # Every AI capability is a fallback chain over the configured providers, in this order.
     providers = []
     if openrouter:
-        providers.append(("OpenRouter", openrouter.translate))
+        providers.append(("OpenRouter", openrouter.complete))
     if gemini:
-        providers.append(("Gemini", gemini.translate))
+        providers.append(("Gemini", gemini.complete))
     if claude_api_key:
-        providers.append(("Claude", Translator(api_key=claude_api_key).translate))
-    # Language check by the model itself: OpenRouter, else Claude, else Gemini.
-    french_check = (
-        openrouter.is_french if openrouter
-        else summarizer.is_french if summarizer
-        else gemini.is_french if gemini
-        else None
-    )
-    translate_fn = TranslationChain(providers, is_french=french_check).translate if providers else None
-
-    if openrouter:
-        summarize_fn = openrouter.summarize
-        validate_fn = openrouter.is_relevant
-        promo_fn = openrouter.is_promotional
-        classify_fn = openrouter.classify
-    else:
-        summarize_fn = summarizer.summarize if summarizer else (gemini.summarize if gemini else None)
-        validate_fn = relevance.is_relevant if relevance else None
-        promo_fn = gemini.is_promotional if gemini else None
-        classify_fn = summarizer.classify if summarizer else None
-
-    if summarize_fn and french_check:
-        summarize_fn = force_french(summarize_fn, french_check)
+        providers.append(("Claude", ClaudeClient(api_key=claude_api_key).complete))
+    ai = build_ai(providers)
+    translate_fn, summarize_fn, classify_fn = ai.translate, ai.summarize, ai.classify
+    validate_fn, promo_fn = ai.is_relevant, ai.is_promotional
 
     state = load_state()
 
