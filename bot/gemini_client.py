@@ -4,6 +4,7 @@ import logging
 
 from google import genai
 
+from bot.language import FRENCH_PROMPT, is_yes
 from bot.promo_filter import PROMO_PROMPT
 from bot.summarizer import SUMMARY_PROMPT
 from bot.translation import TRANSLATE_PROMPT
@@ -27,7 +28,7 @@ class GeminiClient:
         return await self._generate(TRANSLATE_PROMPT + text)
 
     async def summarize(self, text: str) -> str:
-        """Return a summary of tweet text (in the tweet's language). Returns "" on failure."""
+        """Return a summary of tweet text (in French). Returns "" on failure."""
         if not text or not text.strip():
             return ""
         try:
@@ -45,4 +46,12 @@ class GeminiClient:
             return answer.upper().startswith(("OUI", "YES"))
         except Exception:
             logger.exception("Gemini promotion check failed — defaulting to not promotional")
+            return False
+
+    async def is_french(self, text: str) -> bool:
+        """Return True if the text is written in French. Fails closed (False) on error."""
+        try:
+            return is_yes(await self._generate(FRENCH_PROMPT + text))
+        except Exception:
+            logger.exception("Gemini language check failed — treating as not French")
             return False

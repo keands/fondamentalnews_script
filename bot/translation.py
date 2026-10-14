@@ -9,24 +9,33 @@ logger = logging.getLogger(__name__)
 TRANSLATE_PROMPT = (
     "Traduis ce texte en français, intégralement, sans rien omettre ni résumer. "
     "Si le texte est déjà en français, retourne-le tel quel, sans explication. "
-    "Réponds uniquement avec la traduction.\n\n"
+    "Quelle que soit la langue source (russe, chinois, arabe, etc.), la réponse doit être "
+    "entièrement en français. Réponds uniquement avec la traduction.\n\n"
 )
 
 # Seconds to wait before each retry of the same provider (429 / transient errors).
 _RETRY_DELAYS = (2.0, 5.0)
 
 TranslateFn = Callable[[str], Awaitable[str]]
+CheckFn = Callable[[str], Awaitable[bool]]
+
+
+class TranslationError(Exception):
+    """No provider produced a valid French translation."""
 
 
 class TranslationChain:
     """Try each provider in order, retrying transient failures, until one returns a translation.
 
     Providers raise on failure (API error, quota, empty answer). If every provider fails,
-    an error is logged (forwarded to the alert chat) and the original text is returned.
+    an error is logged (forwarded to the alert chat) and TranslationError is raised so that
+    nothing is sent.
     """
 
-    def __init__(self, providers: list[tuple[str, TranslateFn]], retry_delays=_RETRY_DELAYS) -> None:
+    def __init__(self, providers: list[tuple[str, TranslateFn]], retry_delays=_RETRY_DELAYS,
+                 is_french: CheckFn | None = None) -> None:
         self._providers = providers
+        self._is_french = is_french
         self._retry_delays = retry_delays
 
     async def translate(self, text: str) -> str:
@@ -40,11 +49,13 @@ class TranslationChain:
                     translated = (await fn(text) or "").strip()
                     if not translated:
                         raise ValueError("empty translation")
+                    if self._is_french and not await self._is_french(translated):
+                        raise ValueError("translation not in French")
                     return translated
                 except Exception as exc:
                     logger.info("%s translation attempt %d failed: %s: %s",
                                 name, attempt, type(exc).__name__, exc)
             logger.warning("%s translation failed after %d attempts, trying next provider",
                            name, len(self._retry_delays) + 1)
-        logger.error("All translation providers failed — message sent untranslated: %.100s", text)
-        return text
+        logger.error("All translation providers failed — message dropped: %.100s", text)
+        raise TranslationError("all translation providers failed")
