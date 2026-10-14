@@ -70,6 +70,10 @@ class OpenRouterClient:
                     raise
                 logger.info("OpenRouter attempt %d failed: %s: %s", attempt, type(exc).__name__, exc)
 
+    async def complete(self, prompt: str, max_tokens: int = 2048) -> str:
+        """Provider primitive for bot.fallback: one attempt, raises on failure."""
+        return await self._request(prompt, max_tokens)
+
     async def translate(self, text: str) -> str:
         """Translate text to French. Raises on failure; TranslationChain handles the retries."""
         return await self._request(TRANSLATE_PROMPT + text, max_tokens=4096)

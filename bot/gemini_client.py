@@ -23,6 +23,10 @@ class GeminiClient:
         resp = await self._client.aio.models.generate_content(model=self._model, contents=prompt)
         return (resp.text or "").strip()
 
+    async def complete(self, prompt: str, max_tokens: int = 2048) -> str:
+        """Provider primitive for bot.fallback: one attempt, raises on failure (max_tokens unused)."""
+        return await self._generate(prompt)
+
     async def translate(self, text: str) -> str:
         """Translate text to French. Raises on failure (handled by TranslationChain)."""
         return await self._generate(TRANSLATE_PROMPT + text)
