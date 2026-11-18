@@ -1,0 +1,12 @@
+[Unit]
+Description=Nightly deployment of fondamentalnewsbot
+
+[Timer]
+# Quiet hour, UTC. Change with: sudo systemctl edit fondamentalnewsbot-deploy.timer
+OnCalendar=*-*-* 03:30:00 UTC
+# Run at boot if the server was off at the scheduled time.
+Persistent=true
+Unit=fondamentalnewsbot-deploy.service
+
+[Install]
+WantedBy=timers.target

@@ -9,6 +9,7 @@ filtered-stream consumer for real-time tweet delivery:
 
 import asyncio
 import logging
+import signal
 import sys
 from datetime import datetime, timezone
 
@@ -32,6 +33,16 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 logger = logging.getLogger(__name__)
+
+
+async def _wait_any(events: list[asyncio.Event], timeout: float) -> None:
+    """Return when one of `events` is set, or after `timeout` seconds."""
+    waiters = [asyncio.ensure_future(event.wait()) for event in events]
+    try:
+        await asyncio.wait(waiters, timeout=timeout, return_when=asyncio.FIRST_COMPLETED)
+    finally:
+        for waiter in waiters:
+            waiter.cancel()
 
 
 def load_config(path: str = "config.yaml") -> dict:
@@ -61,6 +72,15 @@ async def main() -> bool:
                 cooldown=float(tg_cfg.get("alert_cooldown_seconds", 60)),
             )
         )
+
+    # SIGTERM (systemctl stop/restart) and SIGINT (Ctrl+C) shut down cleanly: the state is saved,
+    # otherwise the morning digest and release alerts sent in the last minute would be repeated.
+    stop_event = asyncio.Event()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            asyncio.get_running_loop().add_signal_handler(sig, stop_event.set)
+        except NotImplementedError:  # Windows
+            pass
 
     # Telegram control panel (restart button), only usable from the alert chat.
     restart_event = asyncio.Event()
@@ -186,12 +206,10 @@ async def main() -> bool:
         asyncio.ensure_future(morning_digest(config=config, send_fn=sender.send, state=state))
 
     try:
-        # Run until a restart is requested, saving the state every minute
-        while not restart_event.is_set():
-            try:
-                await asyncio.wait_for(restart_event.wait(), timeout=60)
-            except asyncio.TimeoutError:
-                save_state(state)
+        # Run until a stop or restart is requested, saving the state every minute
+        while not (restart_event.is_set() or stop_event.is_set()):
+            await _wait_any([restart_event, stop_event], timeout=60)
+            save_state(state)
     except (KeyboardInterrupt, SystemExit):
         logger.info("Shutting down...")
     finally:

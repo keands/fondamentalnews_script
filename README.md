@@ -162,6 +162,8 @@ fondamentalnewsbot/
 ├── config.yaml              # All configuration (API keys, accounts, filters)
 ├── state.json               # Runtime state (last tweet IDs, posted events)
 ├── requirements.txt
+├── requirements-dev.txt     # + pytest (used by the deployment)
+├── deploy/                  # Automatic deployment (script, systemd timer, installer)
 └── bot/
     ├── economic_calendar.py # ForexFactory fetching & formatting
     ├── tweet_monitor.py     # X filtered-stream consumer & formatting
@@ -241,6 +243,59 @@ comes back with a new `✅ Bot started.` message, running the latest code on dis
   copy, for instance), or both will fail with "Conflict" errors.
 - **Disable it** with `telegram.restart_button: false`.
 - Presses made while the bot is down are ignored, so an old button can never restart it by surprise.
+
+---
+
+## Automatic deployment
+
+Optional. Every night at 03:30 UTC (a quiet hour; changeable, see below) the server checks GitHub for a
+new commit on `master` and deploys it **only if it is safe**:
+
+1. nothing new → nothing happens;
+2. a new commit is installed (`pip install -r requirements-dev.txt`) and tested (`pytest`) in a
+   throwaway checkout — if that fails, the running bot and its files are **left untouched**;
+3. otherwise the checkout is fast-forwarded and the service restarted; if the bot does not stay up
+   (crash loop), the previous commit is restored and restarted.
+
+Every outcome is sent to the alert chat (`🚀 Déployé`, `⚠️ Déploiement annulé`, `↩️ Retour à la version`).
+`config.yaml` and `state.json` are never touched. A deployment also stops if the checkout has local
+modifications, is not on `master` or has diverged from GitHub.
+
+**Prerequisite — the server must be able to `git fetch` without a human.** The repository is private,
+so use a read-only *deploy key* (skip this if `sudo -u YOUR_USER git fetch origin` already works):
+
+```bash
+ssh-keygen -t ed25519 -N "" -f ~/.ssh/fondamentalnews_deploy
+cat ~/.ssh/fondamentalnews_deploy.pub    # GitHub: repository > Settings > Deploy keys > Add (read-only)
+printf 'Host github.com\n  IdentityFile ~/.ssh/fondamentalnews_deploy\n  IdentitiesOnly yes\n' >> ~/.ssh/config
+git remote set-url origin git@github.com:OWNER/REPO.git
+git fetch origin master                   # must work without any prompt
+```
+
+**Install (once, on the server):**
+
+```bash
+pip install -r requirements-dev.txt      # in the bot's venv, for pytest
+sudo ./deploy/install.sh                 # SERVICE=name if your unit is not "fondamentalnewsbot"
+```
+
+It installs a systemd service + timer and one narrow sudo rule that lets the bot's user run
+`systemctl restart <service>` — nothing else.
+
+```bash
+sudo systemctl start fondamentalnewsbot-deploy.service    # deploy right now
+systemctl list-timers fondamentalnewsbot-deploy.timer     # next run
+journalctl -u fondamentalnewsbot-deploy -n 50             # what happened
+sudo systemctl edit fondamentalnewsbot-deploy.timer       # change the hour, e.g.:
+#   [Timer]
+#   OnCalendar=
+#   OnCalendar=*-*-* 05:00:00 UTC
+```
+
+A deployment restarts the bot through systemd, so expect `🛑 Bot stopped.` then `✅ Bot started.`.
+`systemctl stop`/`restart` and Ctrl+C stop the bot cleanly (the state is saved first; it holds the
+morning digest date and the release alerts already sent, which avoids duplicates after a restart).
+Docker deployments are not covered.
 
 ---
 
