@@ -21,6 +21,8 @@ from bot.claude_client import ClaudeClient
 from bot.economic_calendar import morning_digest, check_releases
 from bot.gemini_client import GeminiClient
 from bot.openrouter_client import OpenRouterClient
+from bot.restart import restart_process
+from bot.telegram_control import TelegramControl
 from bot.telegram_sender import TelegramSender
 from bot.tweet_monitor import consume_stream, load_state, save_state
 
@@ -37,7 +39,8 @@ def load_config(path: str = "config.yaml") -> dict:
         return yaml.safe_load(f)
 
 
-async def main() -> None:
+async def main() -> bool:
+    """Run the bot until it is stopped. Returns True if a restart was requested from Telegram."""
     config = load_config()
 
     tg_cfg = config.get("telegram", {})
@@ -57,6 +60,17 @@ async def main() -> None:
                 level=logging.getLevelName(str(tg_cfg.get("alert_level", "WARNING")).upper()),
                 cooldown=float(tg_cfg.get("alert_cooldown_seconds", 60)),
             )
+        )
+
+    # Telegram control panel (restart button), only usable from the alert chat.
+    restart_event = asyncio.Event()
+    control = None
+    if tg_cfg.get("alert_chat_id") and tg_cfg.get("restart_button", True):
+        control = TelegramControl(
+            token=tg_cfg["token"],
+            chat_id=tg_cfg["alert_chat_id"],
+            on_restart=restart_event.set,
+            admin_ids=tg_cfg.get("admin_ids") or [],
         )
 
     claude_cfg = config.get("claude") or {}
@@ -146,7 +160,19 @@ async def main() -> None:
 
     scheduler.start()
     logger.info("Scheduler started. Jobs: %s", [j.id for j in scheduler.get_jobs()])
-    await sender.send_alert("✅ Bot started.")
+    if control:
+        try:
+            await control.start()
+            await control.send_panel("✅ Bot started.")
+        except Exception:
+            logger.exception("Telegram control panel disabled")
+            try:
+                await control.stop()  # release what was started
+            except Exception:
+                pass
+            control = None
+    if not control:
+        await sender.send_alert("✅ Bot started.")
 
     # Send digest immediately on startup if it's a weekday past 08:00 UTC and not yet sent today
     now = datetime.now(timezone.utc)
@@ -160,10 +186,12 @@ async def main() -> None:
         asyncio.ensure_future(morning_digest(config=config, send_fn=sender.send, state=state))
 
     try:
-        # Run indefinitely
-        while True:
-            await asyncio.sleep(60)
-            save_state(state)
+        # Run until a restart is requested, saving the state every minute
+        while not restart_event.is_set():
+            try:
+                await asyncio.wait_for(restart_event.wait(), timeout=60)
+            except asyncio.TimeoutError:
+                save_state(state)
     except (KeyboardInterrupt, SystemExit):
         logger.info("Shutting down...")
     finally:
@@ -173,10 +201,15 @@ async def main() -> None:
             await stream_task
         except (asyncio.CancelledError, Exception):
             pass
-        await sender.send_alert("🛑 Bot stopped.")
+        if control:
+            await control.stop()
+        if not restart_event.is_set():
+            await sender.send_alert("🛑 Bot stopped.")
         scheduler.shutdown()
         save_state(state)
+    return restart_event.is_set()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    if asyncio.run(main()):
+        restart_process()  # the event loop is closed: replace this process by a fresh one
