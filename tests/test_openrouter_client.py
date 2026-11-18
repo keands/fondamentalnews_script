@@ -1,24 +1,22 @@
-"""Tests for OpenRouterClient against a local fake API."""
+"""Tests for OpenRouterClient.complete against a local fake API."""
 
 import asyncio
 
+import pytest
 from aiohttp import web
 
-import bot.openrouter_client as ds
+import bot.openrouter_client as orc
 
 
-def _serve(answers):
-    """Run a coroutine factory against a fake API returning `answers` in order."""
+def _serve(status=200, body=None):
+    """Return (run, requests): run(coro_fn) calls coro_fn(client) against a fake API answering `body`."""
     requests = []
 
     async def handler(req):
-        requests.append(await req.json())
-        status, content = answers[min(len(requests), len(answers)) - 1]
+        requests.append({"json": await req.json(), "auth": req.headers.get("Authorization")})
         if status != 200:
-            return web.Response(status=status, text="error")
-        if isinstance(content, dict):
-            return web.json_response(content)
-        return web.json_response({"choices": [{"message": {"content": content}}]})
+            return web.Response(status=status, text="boom")
+        return web.json_response(body)
 
     async def run(coro_fn):
         app = web.Application()
@@ -28,58 +26,46 @@ def _serve(answers):
         site = web.TCPSite(runner, "127.0.0.1", 0)
         await site.start()
         port = site._server.sockets[0].getsockname()[1]
-        old = ds._API_URL
-        ds._API_URL = f"http://127.0.0.1:{port}/api/v1/chat/completions"
+        old = orc._API_URL
+        orc._API_URL = f"http://127.0.0.1:{port}/api/v1/chat/completions"
         try:
-            return await coro_fn(ds.OpenRouterClient("key", retry_delays=(0, 0)))
+            return await coro_fn(orc.OpenRouterClient("key"))
         finally:
-            ds._API_URL = old
+            orc._API_URL = old
             await runner.cleanup()
 
     return run, requests
 
 
-def test_summarize_retries_after_429():
-    run, requests = _serve([(429, ""), (200, "Résumé")])
-    assert asyncio.run(run(lambda c: c.summarize("Powell spoke"))) == "Résumé"
-    assert len(requests) == 2
-    assert requests[0]["model"] == "deepseek/deepseek-v4-flash"
-    assert requests[0]["reasoning"]["enabled"] is False
+def answer(content):
+    return {"choices": [{"message": {"content": content}}]}
 
 
-def test_yes_no_answers():
-    run, _ = _serve([(200, "YES")])
-    assert asyncio.run(run(lambda c: c.is_relevant("Fed hikes"))) is True
-    run, _ = _serve([(200, "OUI")])
-    assert asyncio.run(run(lambda c: c.is_promotional("Use code X"))) is True
-    # The model may answer in the tweet's language instead of the prompt's.
-    run, _ = _serve([(200, " YES")])
-    assert asyncio.run(run(lambda c: c.is_promotional("Use code X"))) is True
-    run, _ = _serve([(200, "NON")])
-    assert asyncio.run(run(lambda c: c.is_relevant("Bonjour"))) is False
+def test_complete_returns_stripped_answer_and_sends_expected_request():
+    run, requests = _serve(body=answer(" Bonjour \n"))
+    assert asyncio.run(run(lambda c: c.complete("Dis bonjour", 77))) == "Bonjour"
+    sent = requests[0]
+    assert sent["auth"] == "Bearer key"
+    assert sent["json"]["model"] == "deepseek/deepseek-v4-flash"
+    assert sent["json"]["messages"] == [{"role": "user", "content": "Dis bonjour"}]
+    assert sent["json"]["max_tokens"] == 77
+    assert sent["json"]["reasoning"]["enabled"] is False
 
 
-def test_failures_use_safe_defaults():
-    run, requests = _serve([(500, "")])
-    assert asyncio.run(run(lambda c: c.is_relevant("Fed hikes"))) is True
-    assert len(requests) == 3
-    run, _ = _serve([(500, "")])
-    assert asyncio.run(run(lambda c: c.is_promotional("x"))) is False
-    run, _ = _serve([(500, "")])
-    assert asyncio.run(run(lambda c: c.classify("x"))) == ""
+def test_http_error_raises():
+    run, _ = _serve(status=429)
+    with pytest.raises(RuntimeError, match="429"):
+        asyncio.run(run(lambda c: c.complete("x")))
 
 
-def test_translate_does_not_retry_itself():
-    run, requests = _serve([(429, "")])
-    try:
-        asyncio.run(run(lambda c: c.translate("Hello")))
-        raise AssertionError("expected an exception")
-    except RuntimeError:
-        pass
-    assert len(requests) == 1
+def test_error_payload_in_200_response_raises():
+    run, _ = _serve(body={"error": {"code": 429, "message": "rate limited"}})
+    with pytest.raises(RuntimeError, match="rate limited"):
+        asyncio.run(run(lambda c: c.complete("x")))
 
 
-def test_error_field_in_200_response_is_retried():
-    run, requests = _serve([(200, {"error": {"code": 429, "message": "rate limited"}}), (200, "Résumé")])
-    assert asyncio.run(run(lambda c: c.summarize("Powell spoke"))) == "Résumé"
-    assert len(requests) == 2
+@pytest.mark.parametrize("content", ["", "   ", None])
+def test_empty_answer_raises(content):
+    run, _ = _serve(body=answer(content))
+    with pytest.raises(ValueError, match="empty"):
+        asyncio.run(run(lambda c: c.complete("x")))

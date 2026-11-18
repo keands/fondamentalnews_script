@@ -33,12 +33,3 @@ class TelegramSender:
             )
         except Exception:
             logger.exception("Failed to send alert DM")
-
-    async def send_v2(self, text: str) -> None:
-        """Send a MarkdownV2-formatted message."""
-        await self._bot.send_message(
-            chat_id=self._channel_id,
-            text=text + "\n\n[@fondamentalnews](https://t\\.me/fondamentalnews)",
-            parse_mode=ParseMode.MARKDOWN_V2,
-            disable_web_page_preview=True,
-        )
