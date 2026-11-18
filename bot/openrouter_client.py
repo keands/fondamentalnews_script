@@ -1,41 +1,19 @@
-"""OpenRouter (OpenAI-compatible API, default model DeepSeek V4 Flash): translation, summary,
-relevance, promotion check, hashtags."""
-
-import asyncio
-import logging
+"""OpenRouter (OpenAI-compatible API, default model DeepSeek V4 Flash) as an AI provider."""
 
 import aiohttp
-
-from bot.language import FRENCH_PROMPT
-from bot.promo_filter import PROMO_PROMPT
-from bot.relevance import RELEVANCE_PROMPT
-from bot.summarizer import CLASSIFY_PROMPT, SUMMARY_PROMPT
-from bot.translation import TRANSLATE_PROMPT
-
-logger = logging.getLogger(__name__)
 
 DEFAULT_MODEL = "deepseek/deepseek-v4-flash"
 _API_URL = "https://openrouter.ai/api/v1/chat/completions"
 _TIMEOUT = aiohttp.ClientTimeout(total=60)
-# Seconds to wait before each retry (429 / transient errors / empty answer).
-_RETRY_DELAYS = (2.0, 5.0)
-# Generous even for one-word answers: if the provider still reasons, reasoning tokens
-# count against max_tokens and a tight limit would leave the answer empty.
-_SHORT_ANSWER_TOKENS = 1024
-
-
-def _is_yes(answer: str) -> bool:
-    """The model may answer in the tweet's language rather than the prompt's: accept both."""
-    return answer.strip().strip("'\".*").upper().startswith(("YES", "OUI"))
 
 
 class OpenRouterClient:
-    def __init__(self, api_key: str, model: str = DEFAULT_MODEL, retry_delays=_RETRY_DELAYS) -> None:
+    def __init__(self, api_key: str, model: str = DEFAULT_MODEL) -> None:
         self._api_key = api_key
         self._model = model or DEFAULT_MODEL
-        self._retry_delays = retry_delays
 
-    async def _request(self, prompt: str, max_tokens: int) -> str:
+    async def complete(self, prompt: str, max_tokens: int = 2048) -> str:
+        """One attempt; raises on HTTP error, error payload or empty answer (retries: bot.fallback)."""
         payload = {
             "model": self._model,
             "messages": [{"role": "user", "content": prompt}],
@@ -57,71 +35,3 @@ class OpenRouterClient:
         if not answer:
             raise ValueError("OpenRouter returned an empty answer")
         return answer
-
-    async def _chat(self, prompt: str, max_tokens: int = 2048) -> str:
-        """Send one prompt, retrying transient failures. Raises after the last attempt."""
-        for attempt, delay in enumerate((0.0, *self._retry_delays), start=1):
-            if delay:
-                await asyncio.sleep(delay)
-            try:
-                return await self._request(prompt, max_tokens)
-            except Exception as exc:
-                if attempt > len(self._retry_delays):
-                    raise
-                logger.info("OpenRouter attempt %d failed: %s: %s", attempt, type(exc).__name__, exc)
-
-    async def complete(self, prompt: str, max_tokens: int = 2048) -> str:
-        """Provider primitive for bot.fallback: one attempt, raises on failure."""
-        return await self._request(prompt, max_tokens)
-
-    async def translate(self, text: str) -> str:
-        """Translate text to French. Raises on failure; TranslationChain handles the retries."""
-        return await self._request(TRANSLATE_PROMPT + text, max_tokens=4096)
-
-    async def summarize(self, text: str) -> str:
-        """Return a summary of tweet text (in French). Returns "" on failure."""
-        if not text or not text.strip():
-            return ""
-        try:
-            return await self._chat(SUMMARY_PROMPT + text)
-        except Exception:
-            logger.exception("OpenRouter summarization failed")
-            return ""
-
-    async def is_relevant(self, text: str) -> bool:
-        """Return True if tweet contains a market-moving signal. Defaults to True on failure."""
-        if not text or not text.strip():
-            return False
-        try:
-            return _is_yes(await self._chat(RELEVANCE_PROMPT + text, max_tokens=_SHORT_ANSWER_TOKENS))
-        except Exception:
-            logger.exception("OpenRouter relevance check failed — defaulting to relevant")
-            return True
-
-    async def is_promotional(self, text: str) -> bool:
-        """Return True if the tweet is promotional content. Defaults to False on failure."""
-        if not text or not text.strip():
-            return False
-        try:
-            return _is_yes(await self._chat(PROMO_PROMPT + text, max_tokens=_SHORT_ANSWER_TOKENS))
-        except Exception:
-            logger.exception("OpenRouter promotion check failed — defaulting to not promotional")
-            return False
-
-    async def is_french(self, text: str) -> bool:
-        """Return True if the text is written in French. Fails closed (False) on error."""
-        try:
-            return _is_yes(await self._chat(FRENCH_PROMPT + text, max_tokens=_SHORT_ANSWER_TOKENS))
-        except Exception:
-            logger.exception("OpenRouter language check failed — treating as not French")
-            return False
-
-    async def classify(self, text: str) -> str:
-        """Return up to 5 French hashtags for the tweet. Returns "" on failure."""
-        if not text or not text.strip():
-            return ""
-        try:
-            return await self._chat(CLASSIFY_PROMPT + text, max_tokens=_SHORT_ANSWER_TOKENS)
-        except Exception:
-            logger.exception("OpenRouter classification failed")
-            return ""

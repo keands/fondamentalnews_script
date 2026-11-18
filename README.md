@@ -7,8 +7,8 @@ A Telegram bot that monitors financial news and posts market-moving information 
 - **Morning Digest** — posts today's economic calendar events (ForexFactory) at 08:00 UTC, Mon–Fri
 - **Release Alerts** — detects when economic data is released (actual value becomes available) and sends an immediate alert
 - **Twitter Monitor** — streams configured X accounts in real-time via the official X API filtered stream, summarizes new tweets and translates the summary to French (DeepSeek V4 Flash via OpenRouter, Gemini or Claude)
-- **AI Relevance Filter** — uses Claude (Haiku) to skip tweets that carry no market-moving signal
-- **Promotion Filter** — never publishes promotional tweets (ads, promo codes, giveaways, newsletters/courses/webinars, "subscribe"/"sign up" calls…), using a keyword filter plus Gemini/Claude
+- **AI Relevance Filter** — skips tweets that carry no market-moving signal
+- **Promotion Filter** — never publishes promotional tweets (ads, promo codes, giveaways, newsletters/courses/webinars, "subscribe"/"sign up" calls…), using a keyword filter plus an AI check
 - **Tweet lifecycle** — fetch the full tweet from X (long posts included, retweets skipped) → filter (promotion + relevance) → summarize → translate the summary to French → send **one** Telegram message per tweet
 - **Error Alerts** — forwards every logged warning/error (failed API requests, job errors, stream disconnects…) to a private Telegram chat
 
@@ -163,14 +163,15 @@ fondamentalnewsbot/
 └── bot/
     ├── economic_calendar.py # ForexFactory fetching & formatting
     ├── tweet_monitor.py     # X filtered-stream consumer & formatting
-    ├── telegram_sender.py   # Telegram message delivery
-    ├── translator.py        # Claude translation
-    ├── gemini_client.py     # Gemini translation, summary & promotion check
-    ├── openrouter_client.py # OpenRouter (DeepSeek V4 Flash): summary, translation, relevance, promo, hashtags
-    ├── translation.py       # Translation retries & provider fallback
+    ├── ai.py                # AI capabilities (translate, summarize, relevance, promo, French check, hashtags)
+    ├── fallback.py          # FallbackChain: retries + provider fallback + failure policy
+    ├── prompts.py           # Every prompt sent to the AI providers
+    ├── openrouter_client.py # OpenRouter provider (DeepSeek V4 Flash by default)
+    ├── gemini_client.py     # Gemini provider
+    ├── claude_client.py     # Claude provider
     ├── promo_filter.py      # Keyword-based promotional tweet filter
-    ├── relevance.py         # Claude AI relevance filter
-    └── summarizer.py        # Claude AI tweet summarizer
+    ├── alert_handler.py     # Forwards logged warnings/errors to the alert chat
+    └── telegram_sender.py   # Telegram message delivery
 ```
 
 ---
@@ -195,25 +196,25 @@ of activity flooding the channel.
 - `medium` — includes Medium and High impact events
 - `high` — High impact only
 
-### `claude.api_key`
-Optional. If omitted, all tweets pass through without AI filtering and no summaries are generated
-(unless a Gemini key is set, in which case Gemini generates the summaries).
+### AI providers: `openrouter`, `gemini`, `claude`
+Each section takes an `api_key` (and an optional `model`; defaults: `deepseek/deepseek-v4-flash` for
+OpenRouter, `gemini-flash-latest` for Gemini). All are optional: every configured provider is used,
+in this order — **OpenRouter → Gemini → Claude** — for **every** AI task (translation, summary,
+relevance filter, promotion check, French check, hashtags).
 
-### `gemini.api_key` / `gemini.model`
-Optional. When set, Gemini is a translation fallback (after OpenRouter), and Gemini
-also checks each tweet for promotional content. `model` defaults to `gemini-flash-latest`.
+For each task, a provider is retried on errors (quota exhaustion, outage, empty answer) after 2 s
+(and 5 s for translation and summaries) before the next provider is tried. If every provider fails:
 
-### `openrouter.api_key` / `openrouter.model`
-Optional. When set, the OpenRouter model (DeepSeek V4 Flash by default) handles **every** AI task: summary, translation, relevance filter,
-promotion check and hashtags (each call retried twice on errors). Gemini and Claude are then only used
-as translation fallbacks. Without OpenRouter, the bot uses Claude/Gemini as before. `model` defaults to `deepseek/deepseek-v4-flash`
-(any OpenRouter model ID works).
+| Task | Result |
+|------|--------|
+| translation | error sent to `alert_chat_id`, the tweet is **not** sent |
+| summary | tweet **not** sent |
+| French check | text rejected (never sent in doubt) |
+| relevance filter | tweet passes |
+| promotion check | tweet passes (the keyword filter still applies) |
+| hashtags | message sent without hashtags |
 
-### Translation fallback
-Translation tries each configured provider in order — **OpenRouter → Gemini → Claude**. Each provider is
-retried twice (after 2 s and 5 s) on errors such as quota exhaustion (HTTP 429) or an empty answer
-before moving to the next one. If every provider fails, the message is sent untranslated and an error
-is sent to `alert_chat_id`.
+Without any AI key, tweets pass through unfiltered, unsummarized and untranslated.
 
 Promotional tweets are always dropped by a keyword filter, even without any API key.
 
