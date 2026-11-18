@@ -4,8 +4,7 @@ import asyncio
 
 import pytest
 
-from bot.ai import build_ai
-from bot.translation import TranslationError
+from bot.ai import TranslationError, build_ai, is_yes
 
 
 def run(coro):
@@ -37,6 +36,13 @@ TRANSLATE = "Traduis ce texte"         # TRANSLATE_PROMPT prefix
 SUMMARY = "Résume ce tweet"            # SUMMARY_PROMPT prefix
 RELEVANCE = "Does this tweet contain"  # RELEVANCE_PROMPT prefix
 PROMO = "Ce tweet est-il de la promotion"
+
+
+def test_is_yes_accepts_oui_and_yes_with_noise():
+    for answer in ("OUI", "yes", " YES", "'oui'", "**OUI**", "Yes."):
+        assert is_yes(answer), answer
+    for answer in ("NON", "no", "", "Maybe"):
+        assert not is_yes(answer), answer
 
 
 def test_no_providers_gives_empty_ai():

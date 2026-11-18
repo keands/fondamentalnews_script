@@ -5,14 +5,27 @@ from dataclasses import dataclass
 from typing import Awaitable, Callable, Optional
 
 from bot.fallback import Capability, FallbackChain, Provider
-from bot.language import FRENCH_PROMPT, is_yes
-from bot.promo_filter import PROMO_PROMPT
-from bot.relevance import RELEVANCE_PROMPT
-from bot.summarizer import CLASSIFY_PROMPT, SUMMARY_PROMPT
-from bot.translation import TRANSLATE_PROMPT, TranslationError
+from bot.prompts import (
+    CLASSIFY_PROMPT,
+    FRENCH_PROMPT,
+    PROMO_PROMPT,
+    RELEVANCE_PROMPT,
+    SUMMARY_PROMPT,
+    TRANSLATE_PROMPT,
+)
 
 _SHORT = 1024  # even for one-word answers: reasoning tokens, if any, count against the limit
 _ID = lambda s: s  # noqa: E731
+
+
+class TranslationError(Exception):
+    """No provider produced a valid French translation."""
+
+
+def is_yes(answer: str) -> bool:
+    """Parse a OUI/YES answer (the model may answer in the tweet's language), tolerating quotes
+    and markdown around it."""
+    return answer.strip().strip("'\".*").upper().startswith(("OUI", "YES"))
 
 
 @dataclass
