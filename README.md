@@ -42,6 +42,8 @@ telegram:
   alert_chat_id: "YOUR_CHAT_ID" # your personal chat for error DMs
   alert_level: "WARNING"        # optional: minimum log level forwarded (WARNING or ERROR)
   alert_cooldown_seconds: 60    # optional: identical alerts are grouped within this window
+  restart_button: true          # optional: restart button in the alert chat (default true)
+  admin_ids: [123456789]        # optional: only these Telegram user IDs may use the button
 
 twitter:
   bearer_token: "YOUR_X_API_BEARER_TOKEN"
@@ -164,6 +166,8 @@ fondamentalnewsbot/
     ├── economic_calendar.py # ForexFactory fetching & formatting
     ├── tweet_monitor.py     # X filtered-stream consumer & formatting
     ├── telegram_sender.py   # Telegram message delivery
+    ├── telegram_control.py  # Telegram restart button (polling, authorization, confirmation)
+    ├── restart.py           # In-place process restart
     ├── translator.py        # Claude translation
     ├── gemini_client.py     # Gemini translation, summary & promotion check
     ├── openrouter_client.py # OpenRouter (DeepSeek V4 Flash): summary, translation, relevance, promo, hashtags
@@ -216,6 +220,26 @@ before moving to the next one. If every provider fails, the message is sent untr
 is sent to `alert_chat_id`.
 
 Promotional tweets are always dropped by a keyword filter, even without any API key.
+
+---
+
+## Restarting from Telegram
+
+When `alert_chat_id` is set, the startup message (`✅ Bot started.`) carries a **🔄 Redémarrer le bot**
+button, and `/menu` in the same chat shows it again. Pressing it asks for a confirmation (✅ / ❌);
+on confirmation the bot stops its stream and scheduler, saves its state and restarts itself. It
+comes back with a new `✅ Bot started.` message, running the latest code on disk and the current
+`config.yaml` (after a `git pull`, for example).
+
+- **Who can use it**: only the `alert_chat_id` chat. If that chat is a group, set `telegram.admin_ids`
+  so that only these users can. Presses from anywhere else are ignored (and logged as a warning).
+- **How**: the process replaces itself with a fresh interpreter running the same command line, so it
+  works under systemd, Docker or a plain shell without depending on a restart policy.
+- **Requirement**: the bot now listens to Telegram (long polling), and Telegram allows a single
+  listener per bot token. Do not run a second copy of the bot with the same token (a development
+  copy, for instance), or both will fail with "Conflict" errors.
+- **Disable it** with `telegram.restart_button: false`.
+- Presses made while the bot is down are ignored, so an old button can never restart it by surprise.
 
 ---
 
