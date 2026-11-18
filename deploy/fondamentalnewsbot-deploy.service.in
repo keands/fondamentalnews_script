@@ -1,0 +1,12 @@
+[Unit]
+Description=Deploy fondamentalnewsbot (fetch, test, restart or roll back)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=@APP_USER@
+WorkingDirectory=@APP_DIR@
+Environment=SERVICE=@SERVICE@
+ExecStart=@APP_DIR@/deploy/deploy.sh
+TimeoutStartSec=900
