@@ -228,14 +228,22 @@ Promotional tweets are always dropped by a keyword filter, even without any API 
 
 ## Restarting from Telegram
 
-When `alert_chat_id` is set, the startup message (`✅ Bot started.`) carries a **🔄 Redémarrer le bot**
-button, and `/menu` in the same chat shows it again. Pressing it asks for a confirmation (✅ / ❌);
-on confirmation the bot stops its stream and scheduler, saves its state and restarts itself. It
-comes back with a new `✅ Bot started.` message, running the latest code on disk and the current
-`config.yaml` (after a `git pull`, for example).
+When `alert_chat_id` is set (a private chat, a group or a channel), two ways to restart the bot:
 
-- **Who can use it**: only the `alert_chat_id` chat. If that chat is a group, set `telegram.admin_ids`
-  so that only these users can. Presses from anywhere else are ignored (and logged as a warning).
+- **`/restart`** — type it in the alert chat: the bot restarts at once (`🔄 Redémarrage en cours…`).
+  This always works, even when the button below is gone (cleared history, auto-deleted messages).
+- **The button** — the startup message (`✅ Bot started.`) carries a **🔄 Redémarrer le bot** button,
+  and `/menu` shows it again. Pressing it asks for a confirmation (✅ / ❌) first.
+
+The bot then stops its stream and scheduler, saves its state and restarts itself. It comes back
+with a new `✅ Bot started.` message, running the latest code on disk and the current `config.yaml`
+(after a `git pull`, for example).
+
+- **Who can use it**: only the `alert_chat_id` chat; commands and presses from anywhere else are
+  ignored. If that chat is a group, set `telegram.admin_ids` so that only these users can. In a
+  **channel**, only its admins can post, so that is enough — but a channel post has no author, so
+  `admin_ids` cannot be checked there: with `admin_ids` set, `/restart` typed in a channel is refused
+  (with a warning), and only the button works.
 - **How**: the process replaces itself with a fresh interpreter running the same command line, so it
   works under systemd, Docker or a plain shell without depending on a restart policy.
 - **Requirement**: the bot now listens to Telegram (long polling), and Telegram allows a single

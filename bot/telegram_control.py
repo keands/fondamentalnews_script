@@ -1,7 +1,10 @@
-"""Telegram control panel: an inline button that restarts the bot.
+"""Telegram control panel: restart the bot from the alert chat.
 
-The bot listens to Telegram updates (long polling) in the alert chat only. `/menu` shows a
-"Restart" button; pressing it asks for a confirmation, then calls `on_restart`.
+The bot listens to Telegram updates (long polling) in the alert chat only, which may be a private
+chat, a group or a channel.
+- `/restart` restarts the bot at once (typing a command is deliberate; no confirmation).
+- `/menu` shows a "Restart" button; pressing it asks for a confirmation first.
+The command keeps working when the button is gone (history cleared, auto-deleted messages).
 """
 
 import logging
@@ -10,7 +13,7 @@ from typing import Callable, Iterable
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.error import BadRequest, TelegramError
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, filters
 from telegram.warnings import PTBUserWarning
 
 logger = logging.getLogger(__name__)
@@ -20,7 +23,12 @@ RESTART_CONFIRM = "restart:confirm"
 RESTART_CANCEL = "restart:cancel"
 
 PANEL_TEXT = "⚙️ Contrôle du bot"
+RESTARTING_TEXT = "🔄 Redémarrage en cours…"
 CONFIRM_TEXT = "Redémarrer le bot ? Il sera indisponible quelques secondes."
+
+
+# CommandHandler only looks at messages by default; posts in a channel are another update type.
+COMMAND_UPDATES = filters.UpdateType.MESSAGE | filters.UpdateType.CHANNEL_POST
 
 
 def panel_markup() -> InlineKeyboardMarkup:
@@ -52,7 +60,8 @@ class TelegramControl:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", PTBUserWarning)  # "No JobQueue set up"
             self._app = builder.build()
-        self._app.add_handler(CommandHandler("menu", self._menu))
+        self._app.add_handler(CommandHandler("restart", self._restart_command, filters=COMMAND_UPDATES))
+        self._app.add_handler(CommandHandler("menu", self._menu, filters=COMMAND_UPDATES))
         self._app.add_handler(CallbackQueryHandler(self._button, pattern=r"^restart(:confirm|:cancel)?$"))
 
     async def start(self) -> None:
@@ -61,7 +70,8 @@ class TelegramControl:
         await self._app.initialize()
         await self._app.start()
         await self._app.updater.start_polling(
-            allowed_updates=[Update.MESSAGE, Update.CALLBACK_QUERY], drop_pending_updates=True
+            allowed_updates=[Update.MESSAGE, Update.CHANNEL_POST, Update.CALLBACK_QUERY],
+            drop_pending_updates=True,
         )
 
     async def stop(self) -> None:
@@ -86,9 +96,40 @@ class TelegramControl:
             return False
         return not self._admin_ids or (user is not None and user.id in self._admin_ids)
 
+    def _deny(self, update: Update, what: str) -> None:
+        """Ignore an unauthorized request silently, except when the chat is the right one but the
+        sender cannot be checked, which the owner needs to know about."""
+        chat = update.effective_chat
+        if chat is not None and str(chat.id) == self._chat_id and update.effective_user is None:
+            logger.warning(
+                "%s ignored: posts in a channel have no author, so telegram.admin_ids cannot be "
+                "checked (remove admin_ids to let the channel's admins use it)", what)
+
+    def _claim_restart(self) -> bool:
+        """True for the first restart request only (a double tap or a second command is ignored)."""
+        if self._restarting:
+            return False
+        self._restarting = True
+        return True
+
     async def _menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        if self._authorized(update):
-            await update.effective_chat.send_message(PANEL_TEXT, reply_markup=panel_markup())
+        if not self._authorized(update):
+            self._deny(update, "/menu")
+            return
+        await update.effective_chat.send_message(PANEL_TEXT, reply_markup=panel_markup())
+
+    async def _restart_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        if not self._authorized(update):
+            self._deny(update, "/restart")
+            return
+        if not self._claim_restart():
+            return
+        user = update.effective_user
+        logger.info("Restart requested by command (user %s)", user.id if user else "channel")
+        try:
+            await update.effective_chat.send_message(RESTARTING_TEXT)
+        finally:
+            self._on_restart()  # restart even if Telegram did not take the acknowledgement
 
     async def _button(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         query = update.callback_query
@@ -105,14 +146,13 @@ class TelegramControl:
             await query.answer("Annulé")
             await self._edit(query, PANEL_TEXT, panel_markup())
         elif query.data == RESTART_CONFIRM:
-            if self._restarting:
+            if not self._claim_restart():
                 await query.answer("Redémarrage déjà en cours")
                 return
-            self._restarting = True
             logger.info("Restart requested from Telegram by user %s", update.effective_user.id)
             try:
                 await query.answer("Redémarrage…")
-                await self._edit(query, "🔄 Redémarrage en cours…", None)
+                await self._edit(query, RESTARTING_TEXT, None)
             finally:
                 self._on_restart()  # restart even if Telegram did not take the confirmation
 
