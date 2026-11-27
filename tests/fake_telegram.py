@@ -17,6 +17,19 @@ def callback_update(update_id, data, chat_id=CHAT, user_id=USER):
     }}
 
 
+def command_update(update_id, command="/restart", chat_id=CHAT, user_id=USER, channel=False):
+    """A text command typed in a chat, or posted in a channel (no author, `channel_post` update)."""
+    entities = [{"type": "bot_command", "offset": 0, "length": len(command.split()[0])}]
+    if channel:
+        return {"update_id": update_id, "channel_post": {
+            "message_id": 6, "date": 0, "chat": {"id": chat_id, "type": "channel", "title": "admin"},
+            "text": command, "entities": entities}}
+    return {"update_id": update_id, "message": {
+        "message_id": 6, "date": 0, "chat": {"id": chat_id, "type": "private"},
+        "from": {"id": user_id, "is_bot": False, "first_name": "K"}, "text": command,
+        "entities": entities}}
+
+
 async def with_fake_telegram(updates, scenario):
     """Serve `updates` once on getUpdates, record every API call, then run scenario(base_url, calls)."""
     calls = []

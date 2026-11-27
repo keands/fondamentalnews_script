@@ -4,9 +4,9 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
-from fake_telegram import CHAT, USER, callback_update, methods, with_fake_telegram
+from fake_telegram import CHAT, USER, callback_update, command_update, methods, with_fake_telegram
 from bot.telegram_control import (
-    CONFIRM_TEXT, PANEL_TEXT, RESTART, RESTART_CANCEL, RESTART_CONFIRM, TelegramControl,
+    CONFIRM_TEXT, PANEL_TEXT, RESTART, RESTARTING_TEXT, RESTART_CANCEL, RESTART_CONFIRM, TelegramControl,
 )
 
 
@@ -140,3 +140,103 @@ def test_send_panel_attaches_the_restart_button():
     sent = methods(calls, "sendMessage")[0]
     assert sent["text"] == "✅ Bot started."
     assert RESTART in str(sent["reply_markup"])
+
+
+# --- /restart: works without the button (history cleared), in chats and in channels ---
+
+def typed(command_chat_id=CHAT, user_id=USER):
+    """A '/restart' typed in a chat: returns (update, send_message mock)."""
+    send = AsyncMock()
+    user = SimpleNamespace(id=user_id) if user_id is not None else None
+    update = SimpleNamespace(effective_chat=SimpleNamespace(id=command_chat_id, send_message=send),
+                             effective_user=user)
+    return update, send
+
+
+def test_restart_command_restarts_at_once_and_says_so():
+    ctl, restarts = control()
+    update, send = typed()
+    run(ctl._restart_command(update, None))
+    assert restarts == [1]
+    send.assert_awaited_once_with(RESTARTING_TEXT)
+
+
+def test_restart_command_twice_or_after_the_button_restarts_once():
+    ctl, restarts = control()
+    for _ in range(2):
+        run(ctl._restart_command(typed()[0], None))
+    press(ctl, RESTART_CONFIRM)
+    assert restarts == [1]
+
+
+def test_restart_command_in_another_chat_is_ignored():
+    ctl, restarts = control()
+    update, send = typed(command_chat_id=999)
+    run(ctl._restart_command(update, None))
+    assert restarts == []
+    send.assert_not_called()
+
+
+def test_restart_command_respects_admin_ids():
+    ctl, restarts = control(admin_ids=[USER])
+    run(ctl._restart_command(typed(user_id=1234)[0], None))
+    assert restarts == []
+    run(ctl._restart_command(typed(user_id=USER)[0], None))
+    assert restarts == [1]
+
+
+def test_channel_post_has_no_author_so_it_works_without_admin_ids():
+    ctl, restarts = control()
+    run(ctl._restart_command(typed(user_id=None)[0], None))
+    assert restarts == [1]
+
+
+def test_channel_post_is_refused_with_a_warning_when_admin_ids_cannot_be_checked(caplog):
+    ctl, restarts = control(admin_ids=[USER])
+    run(ctl._restart_command(typed(user_id=None)[0], None))
+    assert restarts == []
+    assert any("cannot be checked" in r.getMessage() for r in caplog.records)
+
+
+def serve_command(update, who_restarts=1):
+    async def scenario(base_url, calls):
+        restart = asyncio.Event()
+        ctl = TelegramControl("123:abc", CHAT, restart.set, api_base_url=base_url)
+        await ctl.start()
+        try:
+            await asyncio.wait_for(restart.wait(), timeout=who_restarts * 5)
+            restarted = True
+        except asyncio.TimeoutError:
+            restarted = False
+        await ctl.stop()
+        return restarted, calls
+
+    return run(with_fake_telegram([update], scenario))
+
+
+def test_typed_restart_restarts_end_to_end_and_is_acknowledged():
+    restarted, calls = serve_command(command_update(100, "/restart"))
+    assert restarted
+    assert methods(calls, "sendMessage")[0]["text"] == RESTARTING_TEXT
+    offsets = [int(p.get("offset", 0)) for p in methods(calls, "getUpdates")]
+    assert offsets[-1] == 101  # marked as read: the new process will not replay it
+
+
+def test_restart_posted_in_a_channel_restarts_end_to_end():
+    restarted, calls = serve_command(command_update(100, "/restart", channel=True))
+    assert restarted
+    assert methods(calls, "sendMessage")[0]["text"] == RESTARTING_TEXT
+    assert "channel_post" in str(methods(calls, "getUpdates")[0]["allowed_updates"])
+
+
+def test_restart_from_another_chat_or_channel_is_ignored_end_to_end():
+    for update in (command_update(100, "/restart", chat_id=999),
+                   command_update(100, "/restart", chat_id=999, channel=True)):
+        restarted, calls = serve_command(update, who_restarts=0.08)
+        assert restarted is False
+        assert methods(calls, "sendMessage") == []
+
+
+def test_other_commands_do_not_restart_end_to_end():
+    restarted, _ = serve_command(command_update(100, "/status"), who_restarts=0.08)
+    assert restarted is False
